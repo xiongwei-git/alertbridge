@@ -62,6 +62,13 @@ CREATE TABLE IF NOT EXISTS admin_login_windows (
   minute_bucket INTEGER PRIMARY KEY,
   attempt_count INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS admin_credentials (
+  singleton_id INTEGER PRIMARY KEY CHECK(singleton_id=1),
+  username TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `
 
 type ClientRecord struct {
@@ -104,6 +111,13 @@ type AdminSession struct {
 	ExpiresAt time.Time
 }
 
+type AdminCredential struct {
+	Username     string
+	PasswordHash string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
 type DashboardStats struct {
 	Clients         int
 	Channels        int
@@ -130,48 +144,29 @@ type DeliveryView struct {
 	SentAt       *time.Time
 }
 
-func (s *Store) SeedConfiguration(ctx context.Context, clients []ClientRecord, channels []ChannelRecord, routes []RouteRule, now time.Time) (bool, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+func (s *Store) InitializeAdminCredential(ctx context.Context, credential AdminCredential, now time.Time) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO admin_credentials(singleton_id,username,password_hash,created_at,updated_at) VALUES(1,?,?,?,?)`,
+		credential.Username, credential.PasswordHash, now.UnixMilli(), now.UnixMilli())
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = tx.Rollback() }()
-	var count int
-	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM gateway_clients").Scan(&count); err != nil {
-		return false, err
-	}
-	if count > 0 {
-		return false, nil
-	}
-	for _, record := range clients {
-		routesJSON, err := json.Marshal(record.AllowedRoutes)
-		if err != nil {
-			return false, err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO gateway_clients(id,enabled,secret_cipher,allowed_routes_json,rate_limit_per_minute,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`, record.ID, boolInt(record.Enabled), record.SecretCipher, string(routesJSON), record.RateLimitPerMinute, now.UnixMilli(), now.UnixMilli()); err != nil {
-			return false, err
-		}
-	}
-	for _, record := range channels {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO notification_channels(id,type,enabled,config_cipher,created_at,updated_at) VALUES(?,?,?,?,?,?)`, record.ID, record.Type, boolInt(record.Enabled), record.ConfigCipher, now.UnixMilli(), now.UnixMilli()); err != nil {
-			return false, err
-		}
-	}
-	for _, rule := range routes {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO route_rules(routing_key,severity,channel_id,created_at) VALUES(?,?,?,?)`, rule.RoutingKey, rule.Severity, rule.ChannelID, now.UnixMilli()); err != nil {
-			return false, err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	rows, err := result.RowsAffected()
+	return rows == 1, err
 }
 
-func (s *Store) CountGatewayClients(ctx context.Context) (int, error) {
-	var count int
-	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM gateway_clients").Scan(&count)
-	return count, err
+func (s *Store) GetAdminCredential(ctx context.Context) (AdminCredential, error) {
+	var credential AdminCredential
+	var createdMS, updatedMS int64
+	err := s.db.QueryRowContext(ctx, `SELECT username,password_hash,created_at,updated_at FROM admin_credentials WHERE singleton_id=1`).Scan(
+		&credential.Username, &credential.PasswordHash, &createdMS, &updatedMS)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AdminCredential{}, ErrNotFound
+	}
+	if err != nil {
+		return AdminCredential{}, err
+	}
+	credential.CreatedAt, credential.UpdatedAt = time.UnixMilli(createdMS).UTC(), time.UnixMilli(updatedMS).UTC()
+	return credential, nil
 }
 
 func (s *Store) UpsertClient(ctx context.Context, record ClientRecord, now time.Time) error {

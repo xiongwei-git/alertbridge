@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/xiongwei-git/alertbridge/internal/passwordhash"
 	"github.com/xiongwei-git/alertbridge/internal/runtimecfg"
 	"github.com/xiongwei-git/alertbridge/internal/store"
 )
@@ -34,7 +35,7 @@ type Config struct {
 	Database        *store.Store
 	Gateway         *runtimecfg.Manager
 	Username        string
-	Password        []byte
+	PasswordHash    string
 	SessionLifetime time.Duration
 	SecureCookie    bool
 	Now             func() time.Time
@@ -42,10 +43,11 @@ type Config struct {
 }
 
 type Handler struct {
-	cfg       Config
-	templates map[string]*template.Template
-	css       []byte
-	mark      []byte
+	cfg          Config
+	templates    map[string]*template.Template
+	css          []byte
+	mark         []byte
+	passwordGate chan struct{}
 }
 
 type pageData struct {
@@ -81,6 +83,9 @@ type sessionContextKey struct{}
 func New(cfg Config) (*Handler, error) {
 	if cfg.Database == nil || cfg.Gateway == nil {
 		return nil, errors.New("admin database and gateway are required")
+	}
+	if cfg.Username == "" || passwordhash.Validate(cfg.PasswordHash) != nil {
+		return nil, errors.New("valid admin credentials are required")
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -144,7 +149,7 @@ func New(cfg Config) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Handler{cfg: cfg, templates: templates, css: css, mark: mark}, nil
+	return &Handler{cfg: cfg, templates: templates, css: css, mark: mark, passwordGate: make(chan struct{}, 1)}, nil
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -246,8 +251,15 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userDigest, expectedUser := sha256.Sum256([]byte(r.Form.Get("username"))), sha256.Sum256([]byte(h.cfg.Username))
-	passwordDigest, expectedPassword := sha256.Sum256([]byte(r.Form.Get("password"))), sha256.Sum256(h.cfg.Password)
-	if subtle.ConstantTimeCompare(userDigest[:], expectedUser[:]) != 1 || subtle.ConstantTimeCompare(passwordDigest[:], expectedPassword[:]) != 1 {
+	select {
+	case h.passwordGate <- struct{}{}:
+		defer func() { <-h.passwordGate }()
+	case <-r.Context().Done():
+		h.render(w, http.StatusRequestTimeout, "login.html", pageData{Title: "登录", Error: "登录请求已取消"})
+		return
+	}
+	passwordOK := passwordhash.Verify([]byte(r.Form.Get("password")), h.cfg.PasswordHash)
+	if subtle.ConstantTimeCompare(userDigest[:], expectedUser[:]) != 1 || !passwordOK {
 		h.render(w, http.StatusUnauthorized, "login.html", pageData{Title: "登录", Error: "用户名或密码不正确"})
 		return
 	}

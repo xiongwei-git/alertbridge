@@ -10,9 +10,11 @@
 
 ## Security boundaries
 
-- Never commit `config/config.json`, `.env`, anything under `secrets/`, backups, databases, Webhooks, tokens, passwords, client keys, or the dynamic configuration master key.
+- Never commit `.env`, backups, databases, Webhooks, tokens, passwords, client keys, or the dynamic configuration master key.
 - Do not weaken HMAC authentication, replay protection, route authorization, secure cookies, TLS requirements, outbound host allowlists, or Secret file permission checks to make a test pass.
-- `secrets/master-key` and the SQLite volume are a recovery pair and must be backed up together.
+- Production startup has no JSON business-config path. Clients, channels, and routes start empty and are managed through the authenticated admin console.
+- The `alertbridge-data` and `alertbridge-secrets` volumes are a recovery pair and must be backed up and restored together. Never silently regenerate a missing master key for an initialized database.
+- The administrator bootstrap password must enter through a Compose Secret, never the service environment; only its Argon2id hash is stored in SQLite.
 - Keep Docker non-root, read-only, capability-free, resource-limited, and loopback-bound.
 - Keep GHCR as the only official image registry. Pin third-party Actions to full commit SHAs and limit package write permissions to the release publishing job.
 
@@ -27,7 +29,7 @@ go vet ./...
 ./test/e2e/run.sh
 ```
 
-The E2E script uses a separate Compose project, ports `18082`/`19091`, and a temporary directory by default. The local demo uses `18081`/`19090` and persistent ignored files under `test/e2e/tmp`.
+The E2E script uses a separate Compose project, ports `18082`/`19091`, and ignored files under `test/e2e/tmp-run`. The local demo uses port `18081` and persistent ignored files under `test/e2e/tmp`.
 
 Do not run `docker compose down -v` against the production stack or the user's local demo unless data deletion is explicitly requested.
 

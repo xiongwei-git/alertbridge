@@ -1,10 +1,10 @@
-/config/config.json
 /.env
-/secrets/*
-!/secrets/README.md
+/config/
+/secrets/
 /backups/
 /data/
 /test/e2e/tmp/
+/test/e2e/tmp-run/
 /scripts/send-base-test.sh
 .DS_Store
 *.db

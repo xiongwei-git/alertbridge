@@ -14,7 +14,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux go build -trimpath \
     -ldflags="-s -w -buildid= -X main.version=${VERSION}" \
     -o /out/alertbridge ./cmd/alertbridge && \
-    mkdir -p /out/data
+    mkdir -p /out/data /out/secrets && \
+    chmod 700 /out/data /out/secrets
 
 FROM scratch
 ARG VERSION
@@ -26,6 +27,7 @@ LABEL org.opencontainers.image.title="AlertBridge" \
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /out/alertbridge /alertbridge
 COPY --from=build --chown=10001:0 /out/data /var/lib/alertbridge
+COPY --from=build --chown=10001:0 /out/secrets /var/lib/alertbridge-secrets
 
 USER 10001:0
 EXPOSE 8080

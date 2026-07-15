@@ -2,39 +2,38 @@
 
 ## Current state (2026-07-15)
 
-- The current implementation is a Docker-deployable notification gateway with a server-rendered admin console.
-- Durable runtime: Go 1.26.5, pure-Go SQLite, one HTTP process plus one persistent delivery worker.
-- Public API: the only supported inbound contract is `POST /api/v1/events`; health endpoints: `/healthz` and `/readyz`; admin console: `/admin/`.
-- Implemented: per-client HMAC, timestamp/nonce replay protection, route authorization, rate limiting, idempotency, dedupe, recovery duration, silences, encrypted dynamic configuration, credential rotation, delivery inspection/retry, and persistent dead letters.
-- Channel adapters: Feishu text/cards with optional per-channel security-keyword injection, Telegram Bot, ntfy, and TLS/STARTTLS SMTP.
-- Terminal event records have a configurable retention period (default 30 days); pending work is never pruned.
-- Deployment target: Baota Nginx terminates HTTPS and proxies to `127.0.0.1:18080`; the app container must not be directly public.
-- Production secrets are files under `secrets/`, mounted read-only at `/run/secrets`; never store secret values in this file.
-- `secrets/master-key` encrypts dynamic configuration and must be backed up with the SQLite volume.
-- Official production images are published only to `ghcr.io/xiongwei-git/alertbridge`; `compose.yaml` pulls a version pinned in `.env`, while `compose.build.yaml` is the explicit local-build fallback.
+- AlertBridge v0.2.0 is a lightweight Docker notification gateway with a server-rendered management console.
+- Runtime: Go 1.26.5, pure-Go SQLite, one HTTP process, one SQLite connection, and one persistent delivery worker.
+- Public API: `POST /api/v1/events`; health: `/healthz` and `/readyz`; admin: `/admin/`.
+- Implemented: per-client HMAC, replay protection, route authorization, rate limiting, idempotency, dedupe, recovery duration, silences, credential rotation, delivery inspection/retry, and dead letters.
+- Channel adapters: Feishu text/cards with optional security-keyword injection, Telegram Bot, ntfy, and TLS/STARTTLS SMTP.
+- Production deployment needs only `compose.yaml` and `.env`; it pulls `ghcr.io/xiongwei-git/alertbridge` and does not require a repository clone or JSON configuration.
+- First startup accepts an operator-selected administrator password through a Compose Secret, stores only an Argon2id hash, and creates no business configuration.
+- The AES-256-GCM master key is generated atomically with mode `0600` in the separate `alertbridge-secrets` volume. An initialized database must fail startup if that key is missing.
+- `alertbridge-data` and `alertbridge-secrets` are an inseparable encrypted-backup recovery pair.
+- Production topology: Baota Nginx terminates HTTPS and proxies to `127.0.0.1:18080`; the container port is never directly public.
 
 ## Accepted decisions
 
-- Keep v1 single-process and single-instance. Do not add Redis/PostgreSQL until measured scale or multi-instance requirements justify them.
-- Prefer a native channel adapter for Feishu. Its signature and response semantics are covered by tests.
-- A Feishu channel may store one security keyword. The sender injects it into every text body or card title; Feishu error `19024` is permanent and must not enter the retry loop.
-- Keep SQLite at WAL + FULL synchronous with one database connection for predictable single-node reliability.
-- The production image is `scratch`, non-root, read-only, capability-free, and resource-limited.
-- GitHub Actions is the only official image publisher. Semantic version tags publish tested `linux/amd64` and `linux/arm64` images to GHCR with SBOM, provenance and attestation; Docker Hub is intentionally not used.
-- Do not add a second Caddy TLS layer under Baota.
-- Keep the admin UI server-rendered with no external runtime/CDN. Dynamic config uses AES-256-GCM and atomic immutable snapshots.
-- Keep reference fields safe to edit: client routes and route target channels use server-rendered checkbox choices, silence routes use a select, and technical terms expose hover/focus help without JavaScript.
-- The admin integration guide must never decrypt saved client secrets. It derives the current base URL from a strictly validated request Host plus direct TLS or Baota's `X-Forwarded-Proto`, renders client IDs, and chooses a working route/severity from the live routing matrix, while examples keep the secret as a user-supplied placeholder.
-- Keep one canonical, versioned inbound event API. Callers adapt their native payloads to AlertBridge; the gateway does not maintain product-named input parsers or heuristic field conversion. Removed `/hooks/*` paths return a structured `410 Gone` migration response only.
+- Keep v1 single-process and single-instance; do not add Redis or PostgreSQL without measured need.
+- Keep one canonical inbound event API. Callers adapt payloads; AlertBridge does not maintain product-named parsers.
+- Keep SQLite at WAL + FULL synchronous with one connection.
+- Keep the image `scratch`, non-root, read-only, capability-free, loopback-bound, and resource-limited.
+- Publish official `linux/amd64` and `linux/arm64` images only through GitHub Actions and GHCR; Docker Hub is not used.
+- Keep the admin UI server-rendered with no external JavaScript, font, or CDN dependency.
+- Dynamic credentials use AES-256-GCM and atomic immutable runtime snapshots.
+- Business configuration starts empty and is created only through the authenticated management console; there is no legacy JSON bootstrap path.
+- Administrator login uses bounded Argon2id parameters and serialized verification; no fixed default password exists.
 
 ## Deferred scope
 
-- Acknowledgement/escalation policies, Prometheus metrics, and multi-instance storage.
+- Acknowledgement/escalation policies, Prometheus metrics, multi-instance storage, and administrator password self-service/reset flow.
 
 ## Verification commands
 
 ```sh
-docker run --rm -v "$PWD:/src" -w /src golang:1.26.5-alpine3.24 sh -c 'go test ./... && go vet ./...'
+go test ./...
+go vet ./...
 ./test/release/run.sh
 ./test/e2e/run.sh
 ```

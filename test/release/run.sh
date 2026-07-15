@@ -4,10 +4,12 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 ci_workflow="$project_dir/.github/workflows/ci.yml"
 release_workflow="$project_dir/.github/workflows/release.yml"
+e2e_script="$project_dir/test/e2e/run.sh"
 prod_compose=$(mktemp)
 build_compose=$(mktemp)
-init_project=$(mktemp -d)
-trap 'rm -f "$prod_compose" "$build_compose"; rm -rf "$init_project"' EXIT INT TERM
+env_compose=$(mktemp)
+env_project=$(mktemp -d)
+trap 'rm -f "$prod_compose" "$build_compose" "$env_compose"; rm -rf "$env_project"' EXIT INT TERM
 
 require_file() {
   [ -f "$1" ] || {
@@ -27,40 +29,46 @@ require_match() {
 
 require_file "$ci_workflow"
 require_file "$release_workflow"
+require_file "$e2e_script"
 require_file "$project_dir/compose.build.yaml"
 require_file "$project_dir/docs/decisions/ADR-004-github-container-registry.md"
 require_file "$project_dir/VERSION"
 if ! grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' "$project_dir/VERSION"; then
-  printf 'VERSION must contain one semantic version such as v0.1.0\n' >&2
+  printf 'VERSION must contain one semantic version such as v0.2.0\n' >&2
   exit 1
 fi
 
-ALERTBRIDGE_IMAGE_TAG=v9.8.7 docker compose -f "$project_dir/compose.yaml" config > "$prod_compose"
+ALERTBRIDGE_ADMIN_PASSWORD=release-check-password ALERTBRIDGE_IMAGE_TAG=v9.8.7 docker compose -f "$project_dir/compose.yaml" config > "$prod_compose"
 require_match 'image: ghcr\.io/xiongwei-git/alertbridge:v9\.8\.7' "$prod_compose"
+require_match 'environment: ALERTBRIDGE_ADMIN_PASSWORD' "$prod_compose"
+require_match 'target: /run/secrets/admin_password' "$prod_compose"
+require_match 'target: /var/lib/alertbridge-secrets' "$prod_compose"
 if grep -Eq '^[[:space:]]+build:' "$prod_compose"; then
   printf 'production Compose must pull a published image instead of building source\n' >&2
   exit 1
 fi
+if grep -Eq 'ALERTBRIDGE_CONFIG|config\.json|type: bind' "$prod_compose"; then
+  printf 'production Compose must not depend on repository config or bind mounts\n' >&2
+  exit 1
+fi
 
-ALERTBRIDGE_IMAGE_TAG=v9.8.7 ALERTBRIDGE_VERSION=test-build \
+cp "$project_dir/compose.yaml" "$env_project/compose.yaml"
+printf '%s\n' \
+  'ALERTBRIDGE_IMAGE_TAG=v9.8.7' \
+  'ALERTBRIDGE_ADMIN_USERNAME=admin' \
+  'ALERTBRIDGE_ADMIN_PASSWORD=env-file-password-strong' > "$env_project/.env"
+(cd "$env_project" && docker compose config) > "$env_compose"
+require_match 'image: ghcr\.io/xiongwei-git/alertbridge:v9\.8\.7' "$env_compose"
+if grep -Fq 'env-file-password-strong' "$env_compose"; then
+  printf 'Compose rendered the bootstrap password into service metadata\n' >&2
+  exit 1
+fi
+
+ALERTBRIDGE_ADMIN_PASSWORD=release-check-password ALERTBRIDGE_IMAGE_TAG=v9.8.7 ALERTBRIDGE_VERSION=test-build \
   docker compose -f "$project_dir/compose.yaml" -f "$project_dir/compose.build.yaml" config > "$build_compose"
 require_match 'image: alertbridge:local' "$build_compose"
 require_match '^[[:space:]]+build:' "$build_compose"
 require_match 'VERSION: test-build' "$build_compose"
-
-mkdir -p "$init_project/config" "$init_project/scripts"
-cp "$project_dir/VERSION" "$init_project/VERSION"
-cp "$project_dir/config/config.example.json" "$init_project/config/config.example.json"
-cp "$project_dir/scripts/init.sh" "$init_project/scripts/init.sh"
-chmod +x "$init_project/scripts/init.sh"
-"$init_project/scripts/init.sh" >/dev/null
-require_match '^ALERTBRIDGE_GID=[0-9]+$' "$init_project/.env"
-require_match '^ALERTBRIDGE_IMAGE_TAG=v[0-9]+\.[0-9]+\.[0-9]+$' "$init_project/.env"
-"$init_project/scripts/init.sh" >/dev/null
-[ "$(grep -c '^ALERTBRIDGE_IMAGE_TAG=' "$init_project/.env")" -eq 1 ] || {
-  printf 'init.sh must not duplicate ALERTBRIDGE_IMAGE_TAG\n' >&2
-  exit 1
-}
 
 require_match 'pull_request:' "$ci_workflow"
 require_match 'contents: read' "$ci_workflow"
@@ -83,6 +91,12 @@ require_match 'go test ./\.\.\.' "$release_workflow"
 require_match 'go vet ./\.\.\.' "$release_workflow"
 require_match '\./test/e2e/run\.sh' "$release_workflow"
 
+# Docker Compose implements file-backed secrets as bind mounts on Linux. Keep
+# the host directory private while allowing the non-root container to read the
+# mounted file itself.
+require_match 'chmod 700 "\$tmp_dir"' "$e2e_script"
+require_match 'chmod 644 "\$password_file"' "$e2e_script"
+
 if grep -R -n -E 'pull_request_target|docker\.io|index\.docker\.io' "$project_dir/.github/workflows"; then
   printf 'unsafe trigger or Docker Hub reference found in workflows\n' >&2
   exit 1
@@ -100,4 +114,4 @@ if [ -n "$bad_uses" ]; then
   exit 1
 fi
 
-printf 'Release configuration checks passed: GHCR-only production image, pinned actions, least privilege, tests, version tags, and multi-architecture publishing.\n'
+printf 'Release configuration checks passed: repository-free GHCR deployment, Compose secret bootstrap, isolated persistent key volume, pinned actions, least privilege, and multi-architecture publishing.\n'

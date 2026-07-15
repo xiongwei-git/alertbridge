@@ -2,26 +2,23 @@
 set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-compose_file="$project_dir/compose.e2e.yaml"
 tmp_dir="$project_dir/test/e2e/tmp"
-runtime_gid=$(id -g)
+password_file="$tmp_dir/admin-password"
 action=${1:-up}
-
-compose() {
-  ALERTBRIDGE_GID="$runtime_gid" docker compose -f "$compose_file" "$@"
-}
 
 initialize() {
   umask 077
-  mkdir -p "$tmp_dir/secrets"
-  cp "$project_dir/test/e2e/config.json" "$tmp_dir/config.json"
-  [ -s "$tmp_dir/secrets/client-e2e" ] || openssl rand -hex 32 > "$tmp_dir/secrets/client-e2e"
-  [ -s "$tmp_dir/secrets/admin-password" ] || openssl rand -base64 24 > "$tmp_dir/secrets/admin-password"
-  [ -s "$tmp_dir/secrets/master-key" ] || openssl rand -hex 32 > "$tmp_dir/secrets/master-key"
-  printf '%s\n' 'http://mockfeishu:9090/hook' > "$tmp_dir/secrets/feishu-webhook"
-  printf '%s\n' 'local-signing-secret' > "$tmp_dir/secrets/feishu-signing"
-  chmod 750 "$tmp_dir" "$tmp_dir/secrets"
-  chmod 640 "$tmp_dir/config.json" "$tmp_dir/secrets/"*
+  mkdir -p "$tmp_dir"
+  if [ ! -s "$password_file" ]; then
+    openssl rand -base64 24 > "$password_file"
+  fi
+}
+
+compose() {
+  ALERTBRIDGE_ADMIN_PASSWORD=$(tr -d '\r\n' < "$password_file") \
+  ALERTBRIDGE_PORT=18081 \
+  COMPOSE_PROJECT_NAME=alertbridge-local-demo \
+  docker compose -f "$project_dir/compose.yaml" -f "$project_dir/compose.build.yaml" "$@"
 }
 
 case "$action" in
@@ -31,23 +28,26 @@ case "$action" in
     attempt=0
     until curl -fsS http://127.0.0.1:18081/readyz >/dev/null 2>&1; do
       attempt=$((attempt + 1))
-      [ "$attempt" -lt 40 ] || { compose logs alertbridge; exit 1; }
+      [ "$attempt" -lt 60 ] || { compose logs alertbridge; exit 1; }
       sleep 0.5
     done
     printf 'AlertBridge local demo is ready.\n'
     printf 'Admin URL: http://127.0.0.1:18081/admin/\n'
     printf 'Username: admin\n'
-    printf 'Password: %s\n' "$(tr -d '\r\n' < "$tmp_dir/secrets/admin-password")"
-    printf 'Send a test event: ./scripts/send-local-test.sh\n'
+    printf 'Password: %s\n' "$(tr -d '\r\n' < "$password_file")"
+    printf 'Configure channels, routes, and clients in the admin console.\n'
     ;;
   down)
+    initialize
     compose down --remove-orphans
     ;;
   reset)
+    initialize
     compose down -v --remove-orphans
     rm -rf "$tmp_dir"
     ;;
   status)
+    initialize
     compose ps
     ;;
   *)

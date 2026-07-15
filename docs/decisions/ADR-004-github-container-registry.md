@@ -18,7 +18,7 @@ The source repository already lives on GitHub. Maintaining an additional Docker 
 
 - GitHub Actions is the only official CI and image-build system.
 - GitHub Container Registry at `ghcr.io/xiongwei-git/alertbridge` is the only official image registry.
-- A semantic version tag such as `v0.1.0` triggers tests, static analysis, Docker E2E, and then a multi-architecture publish for `linux/amd64` and `linux/arm64`.
+- A semantic version tag such as `v0.2.0` triggers tests, static analysis, Docker E2E, and then a multi-architecture publish for `linux/amd64` and `linux/arm64`.
 - Published tags include the full version, major/minor, non-zero major and `latest`. The floating major tag is suppressed throughout `v0.x`, while production installations always pin the full version through `ALERTBRIDGE_IMAGE_TAG`.
 - GitHub's repository-scoped `GITHUB_TOKEN` publishes the image. Only the publishing job receives `packages: write`, `attestations: write` and `id-token: write`; other jobs remain read-only.
 - Third-party Actions are pinned to immutable commit SHAs. Published images include OCI metadata, SBOM, BuildKit provenance and a GitHub artifact attestation.
