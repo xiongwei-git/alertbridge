@@ -4,6 +4,7 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 ci_workflow="$project_dir/.github/workflows/ci.yml"
 release_workflow="$project_dir/.github/workflows/release.yml"
+e2e_script="$project_dir/test/e2e/run.sh"
 prod_compose=$(mktemp)
 build_compose=$(mktemp)
 env_compose=$(mktemp)
@@ -28,6 +29,7 @@ require_match() {
 
 require_file "$ci_workflow"
 require_file "$release_workflow"
+require_file "$e2e_script"
 require_file "$project_dir/compose.build.yaml"
 require_file "$project_dir/docs/decisions/ADR-004-github-container-registry.md"
 require_file "$project_dir/VERSION"
@@ -88,6 +90,12 @@ require_match 'type=raw,value=latest' "$release_workflow"
 require_match 'go test ./\.\.\.' "$release_workflow"
 require_match 'go vet ./\.\.\.' "$release_workflow"
 require_match '\./test/e2e/run\.sh' "$release_workflow"
+
+# Docker Compose implements file-backed secrets as bind mounts on Linux. Keep
+# the host directory private while allowing the non-root container to read the
+# mounted file itself.
+require_match 'chmod 700 "\$tmp_dir"' "$e2e_script"
+require_match 'chmod 644 "\$password_file"' "$e2e_script"
 
 if grep -R -n -E 'pull_request_target|docker\.io|index\.docker\.io' "$project_dir/.github/workflows"; then
   printf 'unsafe trigger or Docker Hub reference found in workflows\n' >&2

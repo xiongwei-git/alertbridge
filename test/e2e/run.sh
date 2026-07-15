@@ -21,10 +21,14 @@ trap cleanup EXIT INT TERM
 cleanup
 rm -rf "$tmp_dir"
 mkdir -p "$tmp_dir"
+chmod 700 "$tmp_dir"
 tmp_dir=$(CDPATH= cd -- "$tmp_dir" && pwd -P)
 password_file="$tmp_dir/admin-password"
 printf '%s\n' "$admin_password" > "$password_file"
-chmod 600 "$password_file"
+# Linux Compose bind-mounts file-backed secrets without changing ownership.
+# The private parent directory protects the host copy; world-readability on
+# the file lets the container's unprivileged UID read only its mounted secret.
+chmod 644 "$password_file"
 
 compose up -d --build
 
