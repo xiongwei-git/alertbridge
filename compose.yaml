@@ -7,13 +7,14 @@ services:
     ports:
       - "127.0.0.1:${ALERTBRIDGE_PORT:-18080}:8080"
     environment:
-      ALERTBRIDGE_CONFIG: /etc/alertbridge/config.json
+      ALERTBRIDGE_ADMIN_USERNAME: ${ALERTBRIDGE_ADMIN_USERNAME:-admin}
+      ALERTBRIDGE_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
       GOMEMLIMIT: 96MiB
-    user: "10001:${ALERTBRIDGE_GID:-0}"
+    secrets:
+      - admin_password
     volumes:
-      - ./config/config.json:/etc/alertbridge/config.json:ro
-      - ./secrets:/run/secrets:ro
       - alertbridge-data:/var/lib/alertbridge
+      - alertbridge-secrets:/var/lib/alertbridge-secrets
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=8m
@@ -37,5 +38,10 @@ services:
         max-size: 10m
         max-file: "3"
 
+secrets:
+  admin_password:
+    environment: ALERTBRIDGE_ADMIN_PASSWORD
+
 volumes:
   alertbridge-data:
+  alertbridge-secrets:

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xiongwei-git/alertbridge/internal/config"
 	"github.com/xiongwei-git/alertbridge/internal/domain"
+	"github.com/xiongwei-git/alertbridge/internal/passwordhash"
 	"github.com/xiongwei-git/alertbridge/internal/runtimecfg"
 	"github.com/xiongwei-git/alertbridge/internal/securestore"
 	"github.com/xiongwei-git/alertbridge/internal/store"
@@ -164,16 +164,28 @@ func newTestHandler(t *testing.T) (*Handler, *store.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bootstrap := config.Config{
-		Clients:  map[string]config.ClientConfig{"seed-client": {Enabled: true, Secret: []byte("0123456789abcdef0123456789abcdef"), AllowedRoutes: []string{"ops"}, RateLimitPerMinute: 60}},
-		Channels: map[string]config.ChannelConfig{"feishu-test": {Type: "feishu", Enabled: true, Webhook: "https://open.feishu.cn/open-apis/bot/v2/hook/test", MessageType: "text", Keyword: "AlertBridge", AllowedHosts: []string{"open.feishu.cn"}}},
-		Routes:   map[string]map[string][]string{"ops": {"critical": {"feishu-test"}}, "security": {"critical": {"feishu-test"}}},
-	}
-	gateway, err := runtimecfg.New(context.Background(), runtimecfg.Options{Database: database, Cipher: cipher, Bootstrap: bootstrap})
+	gateway, err := runtimecfg.New(context.Background(), runtimecfg.Options{Database: database, Cipher: cipher})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := New(Config{Database: database, Gateway: gateway, Username: "admin", Password: []byte("correct horse battery staple"), SessionLifetime: time.Hour, SecureCookie: false})
+	keyword := "AlertBridge"
+	if err := gateway.UpsertChannel(context.Background(), runtimecfg.ChannelInput{ID: "feishu-test", Type: "feishu", Enabled: true, Endpoint: "https://open.feishu.cn/open-apis/bot/v2/hook/test", MessageType: "text", Keyword: &keyword}); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.ReplaceRoute(context.Background(), "ops", "critical", []string{"feishu-test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.ReplaceRoute(context.Background(), "security", "critical", []string{"feishu-test"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gateway.CreateClient(context.Background(), "seed-client", true, []string{"ops"}, 60); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := passwordhash.Hash([]byte("correct horse battery staple"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := New(Config{Database: database, Gateway: gateway, Username: "admin", PasswordHash: encoded, SessionLifetime: time.Hour, SecureCookie: false})
 	if err != nil {
 		t.Fatal(err)
 	}

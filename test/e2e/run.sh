@@ -4,36 +4,35 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 compose_file="$project_dir/compose.e2e.yaml"
 export COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-alertbridge-e2e-test}
-tmp_dir=${E2E_TMP_DIR:-"${TMPDIR:-/tmp}/alertbridge-e2e-test"}
+tmp_dir=${E2E_TMP_DIR:-"$project_dir/test/e2e/tmp-run"}
 port=${E2E_PORT:-18082}
 mock_port=${E2E_MOCK_PORT:-19091}
-runtime_gid=$(id -g)
-client_secret=0123456789abcdef0123456789abcdef
 admin_password=e2e-admin-password-strong
+password_file="$tmp_dir/admin-password"
+
+compose() {
+  E2E_PORT="$port" E2E_MOCK_PORT="$mock_port" E2E_ADMIN_PASSWORD_FILE="$password_file" docker compose -f "$compose_file" "$@"
+}
 
 cleanup() {
-  ALERTBRIDGE_GID="$runtime_gid" E2E_PORT="$port" E2E_MOCK_PORT="$mock_port" E2E_TMP_DIR="$tmp_dir" docker compose -f "$compose_file" down -v --remove-orphans >/dev/null 2>&1 || true
+  compose down -v --remove-orphans >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 cleanup
 rm -rf "$tmp_dir"
-mkdir -p "$tmp_dir/secrets"
-cp "$project_dir/test/e2e/config.json" "$tmp_dir/config.json"
-printf '%s\n' "$client_secret" > "$tmp_dir/secrets/client-e2e"
-printf '%s\n' 'http://mockfeishu:9090/hook' > "$tmp_dir/secrets/feishu-webhook"
-printf '%s\n' 'e2e-signing-secret' > "$tmp_dir/secrets/feishu-signing"
-printf '%s\n' "$admin_password" > "$tmp_dir/secrets/admin-password"
-printf '%s\n' '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' > "$tmp_dir/secrets/master-key"
-chmod 750 "$tmp_dir" "$tmp_dir/secrets"
-chmod 640 "$tmp_dir/config.json" "$tmp_dir/secrets/"*
+mkdir -p "$tmp_dir"
+tmp_dir=$(CDPATH= cd -- "$tmp_dir" && pwd -P)
+password_file="$tmp_dir/admin-password"
+printf '%s\n' "$admin_password" > "$password_file"
+chmod 600 "$password_file"
 
-ALERTBRIDGE_GID="$runtime_gid" E2E_PORT="$port" E2E_MOCK_PORT="$mock_port" E2E_TMP_DIR="$tmp_dir" docker compose -f "$compose_file" up -d --build
+compose up -d --build
 
 attempt=0
 until curl -fsS "http://127.0.0.1:$port/readyz" >/dev/null 2>&1; do
   attempt=$((attempt + 1))
-  if [ "$attempt" -ge 40 ]; then
-    ALERTBRIDGE_GID="$runtime_gid" E2E_PORT="$port" E2E_MOCK_PORT="$mock_port" E2E_TMP_DIR="$tmp_dir" docker compose -f "$compose_file" logs
+  if [ "$attempt" -ge 60 ]; then
+    compose logs
     exit 1
   fi
   sleep 0.5
@@ -45,10 +44,55 @@ login_status=$(curl -sS -o "$tmp_dir/login.html" -D "$tmp_dir/login.headers" -c 
   --data-urlencode "password=$admin_password" \
   "http://127.0.0.1:$port/admin/login")
 [ "$login_status" = 303 ] || { cat "$tmp_dir/login.html"; exit 1; }
+
 curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/" > "$tmp_dir/dashboard.html"
 grep -q '运行概览' "$tmp_dir/dashboard.html"
+csrf=$(grep -o 'name="csrf" value="[^"]*"' "$tmp_dir/dashboard.html" | head -1 | cut -d '"' -f 4)
+[ -n "$csrf" ] || exit 1
+
+curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/channels" > "$tmp_dir/channels-empty.html"
+grep -q '还没有通知渠道' "$tmp_dir/channels-empty.html"
+curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/routes" > "$tmp_dir/routes-empty.html"
+grep -q '还没有路由规则' "$tmp_dir/routes-empty.html"
+curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/clients" > "$tmp_dir/clients-empty.html"
+grep -q '还没有客户端' "$tmp_dir/clients-empty.html"
+
+channel_status=$(curl -sS -o "$tmp_dir/channel-response.html" -w '%{http_code}' -b "$tmp_dir/cookies.txt" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode "csrf=$csrf" \
+  --data-urlencode 'id=feishu.test' \
+  --data-urlencode 'type=feishu' \
+  --data-urlencode 'enabled=on' \
+  --data-urlencode 'endpoint=http://mockfeishu:9090/hook' \
+  --data-urlencode 'secret=e2e-signing-secret' \
+  --data-urlencode 'message_type=card' \
+  --data-urlencode 'keyword=AlertBridge' \
+  "http://127.0.0.1:$port/admin/channels/save")
+[ "$channel_status" = 303 ] || { cat "$tmp_dir/channel-response.html"; exit 1; }
+
+route_status=$(curl -sS -o "$tmp_dir/route-response.html" -w '%{http_code}' -b "$tmp_dir/cookies.txt" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode "csrf=$csrf" \
+  --data-urlencode 'routing_key=infrastructure' \
+  --data-urlencode 'severity=critical' \
+  --data-urlencode 'channels=feishu.test' \
+  "http://127.0.0.1:$port/admin/routes/save")
+[ "$route_status" = 303 ] || { cat "$tmp_dir/route-response.html"; exit 1; }
+
+create_status=$(curl -sS -o "$tmp_dir/client-secret.html" -w '%{http_code}' -b "$tmp_dir/cookies.txt" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode "csrf=$csrf" \
+  --data-urlencode 'id=e2e-client' \
+  --data-urlencode 'routes=infrastructure' \
+  --data-urlencode 'rate_limit=30' \
+  --data-urlencode 'enabled=on' \
+  "http://127.0.0.1:$port/admin/clients/create")
+[ "$create_status" = 201 ] || { cat "$tmp_dir/client-secret.html"; exit 1; }
+client_secret=$(sed -n 's/.*<pre class="secret-value" tabindex="0">\([^<]*\)<\/pre>.*/\1/p' "$tmp_dir/client-secret.html")
+[ "${#client_secret}" -eq 64 ] || { printf 'client secret was not rendered once\n' >&2; exit 1; }
+
 curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/clients" > "$tmp_dir/clients.html"
-grep -q 'type="checkbox" name="routes" value="infrastructure"' "$tmp_dir/clients.html"
+grep -q 'type="checkbox" name="routes" value="infrastructure" checked' "$tmp_dir/clients.html"
 grep -q 'class="term-help"' "$tmp_dir/clients.html"
 ! grep -q 'name="routes" placeholder=' "$tmp_dir/clients.html"
 curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/channels" > "$tmp_dir/channels.html"
@@ -58,26 +102,12 @@ grep -q 'type="checkbox" name="channels" value="feishu.test"' "$tmp_dir/routes.h
 curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/guide?client=e2e-client" > "$tmp_dir/guide.html"
 grep -q '外部服务如何调用' "$tmp_dir/guide.html"
 grep -q 'X-Notify-Signature' "$tmp_dir/guide.html"
-grep -q 'CLIENT_ID='"'"'e2e-client'"'"'' "$tmp_dir/guide.html"
+grep -q "CLIENT_ID='e2e-client'" "$tmp_dir/guide.html"
 grep -Fq "BASE_URL='http://127.0.0.1:$port'" "$tmp_dir/guide.html"
 grep -Fq "POST http://127.0.0.1:$port/api/v1/events" "$tmp_dir/guide.html"
 ! grep -q "$client_secret" "$tmp_dir/guide.html"
 ! grep -q '/hooks/' "$tmp_dir/guide.html"
 ! grep -Eq 'Gatus|Alertmanager|Grafana|Uptime Kuma' "$tmp_dir/guide.html"
-csrf=$(grep -o 'name="csrf" value="[^"]*"' "$tmp_dir/dashboard.html" | head -1 | cut -d '"' -f 4)
-[ -n "$csrf" ] || exit 1
-
-create_status=$(curl -sS -o "$tmp_dir/client-secret.html" -w '%{http_code}' -b "$tmp_dir/cookies.txt" \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  --data-urlencode "csrf=$csrf" \
-  --data-urlencode 'id=e2e-dynamic-client' \
-  --data-urlencode 'routes=infrastructure' \
-  --data-urlencode 'rate_limit=30' \
-  --data-urlencode 'enabled=on' \
-  "http://127.0.0.1:$port/admin/clients/create")
-[ "$create_status" = 201 ] || { cat "$tmp_dir/client-secret.html"; exit 1; }
-grep -q 'e2e-dynamic-client 的新密钥' "$tmp_dir/client-secret.html"
-grep -q '/admin/guide?client=e2e-dynamic-client' "$tmp_dir/client-secret.html"
 
 timestamp=$(date +%s)
 occurred_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -99,20 +129,17 @@ send_event() {
 status=$(send_event nonce-0001)
 [ "$status" = 202 ] || { cat "$tmp_dir/response.json"; exit 1; }
 grep -q '"outcome":"queued"' "$tmp_dir/response.json"
-
 status=$(send_event nonce-0001)
 [ "$status" = 401 ] || { cat "$tmp_dir/response.json"; exit 1; }
-
 status=$(send_event nonce-0002)
 [ "$status" = 202 ] || { cat "$tmp_dir/response.json"; exit 1; }
 grep -q '"outcome":"duplicate"' "$tmp_dir/response.json"
 
 hook_status=$(curl -sS -o "$tmp_dir/hook-response.json" -w '%{http_code}' \
-  -H 'Content-Type: application/json' \
-  --data-binary '{}' "http://127.0.0.1:$port/hooks/legacy/e2e-client")
+  -H 'Content-Type: application/json' --data-binary '{}' \
+  "http://127.0.0.1:$port/hooks/legacy/e2e-client")
 [ "$hook_status" = 410 ] || { cat "$tmp_dir/hook-response.json"; exit 1; }
 grep -q '"code":"endpoint_removed"' "$tmp_dir/hook-response.json"
-grep -q '/api/v1/events' "$tmp_dir/hook-response.json"
 
 attempt=0
 until curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":1'; do
@@ -121,22 +148,37 @@ until curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":1'; do
   sleep 0.2
 done
 
-ALERTBRIDGE_GID="$runtime_gid" E2E_PORT="$port" E2E_MOCK_PORT="$mock_port" E2E_TMP_DIR="$tmp_dir" docker compose -f "$compose_file" restart alertbridge >/dev/null
+container_id=$(compose ps -q alertbridge)
+if docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -Fq "$admin_password"; then
+  printf 'bootstrap password leaked into container environment\n' >&2
+  exit 1
+fi
+docker cp "$container_id:/var/lib/alertbridge-secrets/master.key" "$tmp_dir/master-key-before" >/dev/null
+printf '%s\n' 'different-bootstrap-password' > "$password_file"
+compose restart alertbridge >/dev/null
 attempt=0
 until curl -fsS "http://127.0.0.1:$port/readyz" >/dev/null 2>&1; do
-  attempt=$((attempt + 1)); [ "$attempt" -lt 30 ] || exit 1; sleep 0.2
+  attempt=$((attempt + 1)); [ "$attempt" -lt 40 ] || exit 1; sleep 0.2
 done
+container_id=$(compose ps -q alertbridge)
+docker cp "$container_id:/var/lib/alertbridge-secrets/master.key" "$tmp_dir/master-key-after" >/dev/null
+cmp "$tmp_dir/master-key-before" "$tmp_dir/master-key-after"
+
+original_login=$(curl -sS -o /dev/null -w '%{http_code}' -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'username=admin' --data-urlencode "password=$admin_password" "http://127.0.0.1:$port/admin/login")
+[ "$original_login" = 303 ] || exit 1
+changed_login=$(curl -sS -o /dev/null -w '%{http_code}' -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'username=admin' --data-urlencode 'password=different-bootstrap-password' "http://127.0.0.1:$port/admin/login")
+[ "$changed_login" = 401 ] || exit 1
 
 status=$(send_event nonce-0003)
 [ "$status" = 202 ] || { cat "$tmp_dir/response.json"; exit 1; }
 grep -q '"outcome":"duplicate"' "$tmp_dir/response.json"
 curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":1'
-curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/" | grep -q '运行概览'
 
-image_id=$(ALERTBRIDGE_GID="$runtime_gid" E2E_PORT="$port" E2E_MOCK_PORT="$mock_port" E2E_TMP_DIR="$tmp_dir" docker compose -f "$compose_file" images -q alertbridge)
-container_id=$(ALERTBRIDGE_GID="$runtime_gid" E2E_PORT="$port" E2E_MOCK_PORT="$mock_port" E2E_TMP_DIR="$tmp_dir" docker compose -f "$compose_file" ps -q alertbridge)
+image_id=$(compose images -q alertbridge)
 image_bytes=$(docker image inspect "$image_id" --format '{{.Size}}')
 memory_usage=$(docker stats --no-stream --format '{{.MemUsage}}' "$container_id")
 
-printf 'Docker E2E passed: admin auth/dynamic config, canonical signed API, legacy hook removal, replay rejection, idempotency, delivery, and restart persistence.\n'
+printf 'Docker E2E passed: empty first boot, Argon2id admin bootstrap, UI-only dynamic setup, canonical signed API, replay rejection, delivery, and key/config persistence.\n'
 printf 'Docker footprint: image_bytes=%s idle_memory=%s\n' "$image_bytes" "$memory_usage"

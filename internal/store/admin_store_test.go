@@ -81,6 +81,24 @@ func TestAdminSessionAndLoginLimit(t *testing.T) {
 	}
 }
 
+func TestAdminCredentialIsInitializedOnce(t *testing.T) {
+	database := openTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	created, err := database.InitializeAdminCredential(ctx, AdminCredential{Username: "admin", PasswordHash: "$argon2id$first"}, now)
+	if err != nil || !created {
+		t.Fatalf("first InitializeAdminCredential() = %v, %v", created, err)
+	}
+	created, err = database.InitializeAdminCredential(ctx, AdminCredential{Username: "attacker", PasswordHash: "$argon2id$second"}, now.Add(time.Minute))
+	if err != nil || created {
+		t.Fatalf("second InitializeAdminCredential() = %v, %v", created, err)
+	}
+	credential, err := database.GetAdminCredential(ctx)
+	if err != nil || credential.Username != "admin" || credential.PasswordHash != "$argon2id$first" {
+		t.Fatalf("credential = %+v, %v", credential, err)
+	}
+}
+
 func TestDeliveryListingAndDeadRetry(t *testing.T) {
 	database := openTestStore(t)
 	ctx := context.Background()

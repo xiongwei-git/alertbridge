@@ -19,7 +19,6 @@ import (
 
 	"github.com/xiongwei-git/alertbridge/internal/auth"
 	"github.com/xiongwei-git/alertbridge/internal/channel"
-	"github.com/xiongwei-git/alertbridge/internal/config"
 	"github.com/xiongwei-git/alertbridge/internal/domain"
 	"github.com/xiongwei-git/alertbridge/internal/securestore"
 	"github.com/xiongwei-git/alertbridge/internal/store"
@@ -33,7 +32,6 @@ var (
 type Options struct {
 	Database          *store.Store
 	Cipher            *securestore.Cipher
-	Bootstrap         config.Config
 	RequestTimeout    time.Duration
 	AllowInsecureHTTP bool
 	Logger            *slog.Logger
@@ -128,44 +126,10 @@ func New(ctx context.Context, opts Options) (*Manager, error) {
 		opts.Logger = slog.Default()
 	}
 	manager := &Manager{database: opts.Database, cipher: opts.Cipher, requestTimeout: opts.RequestTimeout, allowInsecureHTTP: opts.AllowInsecureHTTP, logger: opts.Logger}
-	if err := manager.seed(ctx, opts.Bootstrap); err != nil {
-		return nil, err
-	}
 	if err := manager.Reload(ctx); err != nil {
 		return nil, err
 	}
 	return manager, nil
-}
-
-func (m *Manager) seed(ctx context.Context, bootstrap config.Config) error {
-	now := time.Now().UTC()
-	clients := make([]store.ClientRecord, 0, len(bootstrap.Clients))
-	for id, item := range bootstrap.Clients {
-		secret, err := m.cipher.Encrypt(item.Secret)
-		if err != nil {
-			return err
-		}
-		clients = append(clients, store.ClientRecord{ID: id, Enabled: item.Enabled, SecretCipher: secret, AllowedRoutes: item.AllowedRoutes, RateLimitPerMinute: item.RateLimitPerMinute})
-	}
-	channels := make([]store.ChannelRecord, 0, len(bootstrap.Channels))
-	for id, item := range bootstrap.Channels {
-		stored := storedChannelConfig{Webhook: item.Webhook, SigningSecret: string(item.SigningSecret), MessageType: item.MessageType, Keyword: item.Keyword, AllowedHosts: item.AllowedHosts}
-		ciphertext, err := m.encryptConfig(stored)
-		if err != nil {
-			return err
-		}
-		channels = append(channels, store.ChannelRecord{ID: id, Type: item.Type, Enabled: item.Enabled, ConfigCipher: ciphertext})
-	}
-	var routes []store.RouteRule
-	for routingKey, severities := range bootstrap.Routes {
-		for severity, channelIDs := range severities {
-			for _, channelID := range channelIDs {
-				routes = append(routes, store.RouteRule{RoutingKey: routingKey, Severity: severity, ChannelID: channelID})
-			}
-		}
-	}
-	_, err := m.database.SeedConfiguration(ctx, clients, channels, routes, now)
-	return err
 }
 
 func (m *Manager) Reload(ctx context.Context) error {

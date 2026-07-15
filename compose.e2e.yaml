@@ -17,16 +17,16 @@ services:
       context: .
       args:
         VERSION: e2e
-    user: "10001:${ALERTBRIDGE_GID:-0}"
     environment:
-      ALERTBRIDGE_CONFIG: /etc/alertbridge/config.json
+      ALERTBRIDGE_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
       ALERTBRIDGE_ALLOW_INSECURE_HTTP: "1"
       ALERTBRIDGE_ALLOW_INSECURE_ADMIN_COOKIE: "1"
       GOMEMLIMIT: 96MiB
+    secrets:
+      - admin_password
     volumes:
-      - ${E2E_TMP_DIR:-./test/e2e/tmp}/config.json:/etc/alertbridge/config.json:ro
-      - ${E2E_TMP_DIR:-./test/e2e/tmp}/secrets:/run/secrets:ro
       - alertbridge-data:/var/lib/alertbridge
+      - alertbridge-secrets:/var/lib/alertbridge-secrets
     ports:
       - "127.0.0.1:${E2E_PORT:-18081}:8080"
     depends_on:
@@ -36,11 +36,19 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: 0.50
     healthcheck:
       test: ["CMD", "/alertbridge", "-healthcheck"]
       interval: 2s
       timeout: 2s
       retries: 10
 
+secrets:
+  admin_password:
+    file: ${E2E_ADMIN_PASSWORD_FILE:-./test/e2e/tmp/admin-password}
+
 volumes:
   alertbridge-data:
+  alertbridge-secrets:

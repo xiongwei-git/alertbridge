@@ -9,13 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xiongwei-git/alertbridge/internal/config"
 	"github.com/xiongwei-git/alertbridge/internal/domain"
 	"github.com/xiongwei-git/alertbridge/internal/securestore"
 	"github.com/xiongwei-git/alertbridge/internal/store"
 )
 
-func TestManagerSeedsAndReloadsDynamicConfiguration(t *testing.T) {
+func TestManagerInitializesEmptyAndReloadsDynamicConfiguration(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"code":0}`)) }))
 	defer server.Close()
 	database, err := store.Open(filepath.Join(t.TempDir(), "alertbridge.db"))
@@ -27,13 +26,21 @@ func TestManagerSeedsAndReloadsDynamicConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bootstrap := config.Config{
-		Clients:  map[string]config.ClientConfig{"seed": {Enabled: true, Secret: []byte("0123456789abcdef0123456789abcdef"), AllowedRoutes: []string{"infra"}, RateLimitPerMinute: 60}},
-		Channels: map[string]config.ChannelConfig{"feishu": {Type: "feishu", Enabled: true, Webhook: server.URL, MessageType: "text", Keyword: "AlertBridge", AllowedHosts: []string{"127.0.0.1"}}},
-		Routes:   map[string]map[string][]string{"infra": {"critical": {"feishu"}}},
-	}
-	manager, err := New(context.Background(), Options{Database: database, Cipher: cipher, Bootstrap: bootstrap, AllowInsecureHTTP: true})
+	manager, err := New(context.Background(), Options{Database: database, Cipher: cipher, AllowInsecureHTTP: true})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manager.Clients()) != 0 || len(manager.Channels()) != 0 || len(manager.Routes()) != 0 {
+		t.Fatal("new manager must start without business configuration")
+	}
+	keyword := "AlertBridge"
+	if err := manager.UpsertChannel(context.Background(), ChannelInput{ID: "feishu", Type: "feishu", Enabled: true, Endpoint: server.URL, MessageType: "text", Keyword: &keyword}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.ReplaceRoute(context.Background(), "infra", "critical", []string{"feishu"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.CreateClient(context.Background(), "seed", true, []string{"infra"}, 60); err != nil {
 		t.Fatal(err)
 	}
 	client, ok := manager.LookupClient("seed")
@@ -66,8 +73,8 @@ func TestManagerSeedsAndReloadsDynamicConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(record.SecretCipher, []byte("0123456789abcdef")) {
-		t.Fatal("client secret stored in plaintext")
+	if len(record.SecretCipher) == 0 {
+		t.Fatal("client secret ciphertext is empty")
 	}
 
 	secret, err := manager.CreateClient(context.Background(), "grafana", true, []string{"infra"}, 30)
@@ -88,8 +95,7 @@ func TestManagerChannelRouteAndSilenceUpdatesAreImmediate(t *testing.T) {
 	}
 	defer database.Close()
 	cipher, _ := securestore.New(bytes.Repeat([]byte{8}, 32))
-	bootstrap := config.Config{Clients: map[string]config.ClientConfig{"seed": {Enabled: true, Secret: bytes.Repeat([]byte{'a'}, 32), AllowedRoutes: []string{"infra"}, RateLimitPerMinute: 10}}, Channels: map[string]config.ChannelConfig{}, Routes: map[string]map[string][]string{}}
-	manager, err := New(context.Background(), Options{Database: database, Cipher: cipher, Bootstrap: bootstrap, AllowInsecureHTTP: true})
+	manager, err := New(context.Background(), Options{Database: database, Cipher: cipher, AllowInsecureHTTP: true})
 	if err != nil {
 		t.Fatal(err)
 	}

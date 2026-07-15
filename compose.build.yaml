@@ -6,3 +6,6 @@ services:
         VERSION: ${ALERTBRIDGE_VERSION:-local}
     image: alertbridge:local
     pull_policy: never
+    environment:
+      ALERTBRIDGE_ALLOW_INSECURE_ADMIN_COOKIE: "1"
+      ALERTBRIDGE_ALLOW_INSECURE_HTTP: "1"
