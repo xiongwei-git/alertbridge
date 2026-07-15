@@ -3,6 +3,7 @@ set -eu
 
 umask 077
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+release_version=$(tr -d '\r\n' < "$project_dir/VERSION")
 mkdir -p "$project_dir/config" "$project_dir/secrets"
 
 if [ ! -f "$project_dir/config/config.json" ]; then
@@ -30,9 +31,14 @@ done
 chmod 750 "$project_dir/config" "$project_dir/secrets"
 chmod 640 "$project_dir/config/config.json" "$project_dir/secrets/"*
 
-if [ ! -f "$project_dir/.env" ]; then
-  printf 'ALERTBRIDGE_GID=%s\n' "$(id -g)" > "$project_dir/.env"
+touch "$project_dir/.env"
+if ! grep -q '^ALERTBRIDGE_GID=' "$project_dir/.env"; then
+  printf 'ALERTBRIDGE_GID=%s\n' "$(id -g)" >> "$project_dir/.env"
 fi
+if ! grep -q '^ALERTBRIDGE_IMAGE_TAG=' "$project_dir/.env"; then
+  printf 'ALERTBRIDGE_IMAGE_TAG=%s\n' "$release_version" >> "$project_dir/.env"
+fi
+chmod 600 "$project_dir/.env"
 
 cat <<'EOF'
 Initialization complete.
@@ -43,4 +49,5 @@ Before starting AlertBridge:
 3. The admin username is admin; retrieve its generated password from secrets/admin-password.
 4. Review config/config.json.
 5. Keep the generated ALERTBRIDGE_GID in .env aligned with the files' group.
+6. ALERTBRIDGE_IMAGE_TAG in .env pins the deployed image version; change it only during an upgrade or rollback.
 EOF

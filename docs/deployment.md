@@ -35,6 +35,14 @@ AlertBridge 最好部署在独立于关键被监控服务的 VPS 上。否则这
 
 所有后续命令都从项目根目录执行。
 
+首次部署建议直接检出明确版本，不要让生产服务器长期跟随 `main`：
+
+```sh
+git clone https://github.com/xiongwei-git/alertbridge.git /www/wwwroot/AlertBridge
+cd /www/wwwroot/AlertBridge
+git checkout v0.1.0
+```
+
 ## 3. 初始化
 
 ```sh
@@ -52,7 +60,7 @@ cd /www/wwwroot/AlertBridge
 | `secrets/client-monitoring` | 默认客户端 HMAC 密钥 | 对应调用方需要轮换密钥 |
 | `secrets/admin-password` | 后台管理员密码 | 需要停机修改配置或重新初始化 |
 | `secrets/master-key` | 加密 SQLite 中的动态凭证 | 已保存的客户端和渠道凭证无法解密 |
-| `.env` | 容器读取 Secret 的宿主机组 ID | 文件挂载可能因权限失败 |
+| `.env` | 宿主机组 ID 和锁定的官方镜像版本 | 文件挂载可能失败或部署版本不明确 |
 
 `master-key` 必须和 SQLite 数据卷配套备份。只恢复数据库、不恢复原主密钥，服务无法读取后台保存的动态配置。
 
@@ -90,13 +98,15 @@ chmod 640 config/config.json secrets/*
 docker compose config
 ```
 
-构建并写入当前 Git 版本：
+拉取与当前代码版本匹配的官方 GHCR 镜像并启动：
 
 ```sh
-ALERTBRIDGE_VERSION="$(git rev-parse --short HEAD 2>/dev/null || printf local)" \
-  docker compose build --pull
+grep '^ALERTBRIDGE_IMAGE_TAG=' .env
+docker compose pull
 docker compose up -d
 ```
+
+镜像地址为 `ghcr.io/xiongwei-git/alertbridge`。初始化脚本会将仓库 `VERSION` 写入 `.env` 的 `ALERTBRIDGE_IMAGE_TAG`；生产环境应保留完整版本号，例如 `v0.1.0`，不要依赖可变的 `latest`。
 
 确认容器和数据库就绪：
 
@@ -121,6 +131,16 @@ Compose 默认约束：
 - 删除全部 Linux capabilities，启用 `no-new-privileges`；
 - 128 MiB 内存、0.5 CPU、128 个进程；
 - JSON 日志单文件 10 MiB，最多保留 3 个。
+
+只有开发者需要从源码验证镜像时才使用覆盖文件：
+
+```sh
+ALERTBRIDGE_VERSION="$(git rev-parse --short HEAD 2>/dev/null || printf local)" \
+  docker compose -f compose.yaml -f compose.build.yaml build --pull
+docker compose -f compose.yaml -f compose.build.yaml up -d
+```
+
+该方式生成本机 `alertbridge:local`，不是官方生产发布流程。
 
 需要修改宿主机端口时，在 `.env` 增加：
 
@@ -210,30 +230,37 @@ docker compose down -v
 
 ## 9. 升级与回滚
 
-升级前先完成第 10 节的数据库与密钥备份，并给当前镜像保留回滚标签：
+升级前先完成第 10 节的数据库与密钥备份，并记录当前完整版本：
 
 ```sh
-rollback_tag="alertbridge:rollback-$(date +%Y%m%d-%H%M%S)"
-docker image tag alertbridge:local "$rollback_tag"
-printf 'Rollback image: %s\n' "$rollback_tag"
+old_version=$(sed -n 's/^ALERTBRIDGE_IMAGE_TAG=//p' .env)
+test -n "$old_version"
+printf 'Rollback version: %s\n' "$old_version"
 ```
 
-拉取代码、重新构建并观察健康状态：
+将 `new_version` 改成准备升级的 GitHub Release 版本。代码、Compose 和镜像必须使用同一个版本：
 
 ```sh
-git pull --ff-only
-ALERTBRIDGE_VERSION="$(git rev-parse --short HEAD)" docker compose build --pull
-docker compose up -d
+new_version=v0.2.0
+git fetch --tags --prune
+git checkout "$new_version"
+test "$(cat VERSION)" = "$new_version"
+sed -i "s/^ALERTBRIDGE_IMAGE_TAG=.*/ALERTBRIDGE_IMAGE_TAG=$new_version/" .env
+docker compose pull
+docker compose up -d --force-recreate
 docker compose ps
 curl -fsS http://127.0.0.1:18080/readyz
 docker compose logs --tail=100 alertbridge
 ```
 
-如果新容器无法启动，将上一步打印的标签替换到下面命令：
+如果新容器无法启动，回到刚才记录的版本：
 
 ```sh
-docker image tag alertbridge:rollback-YYYYMMDD-HHMMSS alertbridge:local
-docker compose up -d --no-build --force-recreate
+git checkout "$old_version"
+sed -i "s/^ALERTBRIDGE_IMAGE_TAG=.*/ALERTBRIDGE_IMAGE_TAG=$old_version/" .env
+docker compose pull
+docker compose up -d --force-recreate
+curl -fsS http://127.0.0.1:18080/readyz
 ```
 
 若未来版本说明包含不可逆数据库迁移，只回滚镜像可能不够，应同时恢复与旧镜像匹配的数据卷和 `master-key` 备份。
@@ -316,5 +343,6 @@ curl -fsS http://127.0.0.1:18080/readyz
 | 飞书返回关键词错误 `19024` | 后台渠道中的“安全关键词”必须命中飞书机器人配置的任一关键词 |
 | 渠道持续重试或进入死信 | 检查 VPS 出站 DNS/HTTPS、目标主机白名单、Token/密码和第三方服务响应 |
 | 18080 端口被占用 | 在 `.env` 设置新的 `ALERTBRIDGE_PORT`，再执行 `docker compose up -d --force-recreate` |
+| GHCR 镜像拉取失败 | 确认 `.env` 使用已发布的完整版本；检查 VPS 能否访问 `ghcr.io`；公开镜像无需登录 |
 
 不要通过关闭 HMAC、放宽 Secret 权限、启用明文 SMTP 或把容器端口暴露公网来绕过故障。先根据日志和结构化错误码定位边界。

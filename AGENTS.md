@@ -14,6 +14,7 @@
 - Do not weaken HMAC authentication, replay protection, route authorization, secure cookies, TLS requirements, outbound host allowlists, or Secret file permission checks to make a test pass.
 - `secrets/master-key` and the SQLite volume are a recovery pair and must be backed up together.
 - Keep Docker non-root, read-only, capability-free, resource-limited, and loopback-bound.
+- Keep GHCR as the only official image registry. Pin third-party Actions to full commit SHAs and limit package write permissions to the release publishing job.
 
 ## Verification
 
@@ -22,6 +23,7 @@ Run focused tests while changing code, then complete:
 ```sh
 go test ./...
 go vet ./...
+./test/release/run.sh
 ./test/e2e/run.sh
 ```
 

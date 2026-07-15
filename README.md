@@ -1,5 +1,7 @@
 # AlertBridge
 
+[![CI](https://github.com/xiongwei-git/alertbridge/actions/workflows/ci.yml/badge.svg)](https://github.com/xiongwei-git/alertbridge/actions/workflows/ci.yml)
+
 AlertBridge 是一个面向个人、小团队和单节点运维环境的轻量通知网关。外部系统只向统一事件 API 提交消息；AlertBridge 负责认证、路由、静默、去重、持久化排队、失败重试和多渠道投递。
 
 它采用 Go 单进程与 SQLite，不需要 Redis、PostgreSQL、Node.js 或独立前端服务。生产镜像基于 `scratch`，Docker E2E 环境中的参考体积约 5.6 MB、空闲内存约 8–10 MiB；实际资源使用会随消息量和配置变化。
@@ -95,7 +97,7 @@ http://127.0.0.1:18081/admin/
 - `secrets/client-monitoring`：默认客户端 HMAC 密钥；
 - `secrets/admin-password`：后台管理员密码；
 - `secrets/master-key`：动态配置加密主密钥；
-- `.env`：容器读取本机 Secret 文件所需的组 ID。
+- `.env`：容器读取 Secret 所需的组 ID，以及锁定的官方镜像版本。
 
 随后填写：
 
@@ -105,15 +107,17 @@ http://127.0.0.1:18081/admin/
 
 Secret 文件只保存原始值，不要加引号。`config/config.json`、`.env`、`secrets/*`、`backups/` 和运行数据库都已被 `.gitignore` 排除；不要使用 `git add -f` 强制提交它们。
 
-### 2. 构建并启动
+### 2. 拉取并启动
 
 ```sh
 docker compose config
-ALERTBRIDGE_VERSION="$(git rev-parse --short HEAD 2>/dev/null || printf local)" docker compose build --pull
+docker compose pull
 docker compose up -d
 docker compose ps
 curl -fsS http://127.0.0.1:18080/readyz
 ```
+
+生产 Compose 从 GitHub Container Registry 拉取 `ghcr.io/xiongwei-git/alertbridge`。`./scripts/init.sh` 会把当前稳定版本写入 `.env` 的 `ALERTBRIDGE_IMAGE_TAG`，避免生产环境被可变的 `latest` 意外升级。
 
 服务默认只绑定 `127.0.0.1:18080`，不要在安全组或主机防火墙中开放该端口。生产环境应通过 HTTPS 反向代理访问：
 
@@ -183,6 +187,7 @@ docker compose down
 ```sh
 go test ./...
 go vet ./...
+./test/release/run.sh
 ```
 
 也可以完全在 Docker 中验证：
@@ -194,6 +199,13 @@ docker run --rm -v "$PWD:/src" -w /src golang:1.26.5-alpine3.24 \
 ```
 
 E2E 脚本会创建并清理自己的 Compose 栈；不要把生产配置或生产端口传给它。
+
+需要验证源码镜像构建时，使用显式覆盖文件，不改变生产 Compose：
+
+```sh
+ALERTBRIDGE_VERSION=dev \
+  docker compose -f compose.yaml -f compose.build.yaml build --pull
+```
 
 ## 文档
 
@@ -222,6 +234,7 @@ internal/worker       投递、重试和死信
 config                配置模板
 docs                  API、部署和架构决策
 test/e2e              Docker 端到端测试
+test/release          GHCR 发布配置契约检查
 ```
 
 ## 许可证

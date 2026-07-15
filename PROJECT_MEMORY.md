@@ -11,6 +11,7 @@
 - Deployment target: Baota Nginx terminates HTTPS and proxies to `127.0.0.1:18080`; the app container must not be directly public.
 - Production secrets are files under `secrets/`, mounted read-only at `/run/secrets`; never store secret values in this file.
 - `secrets/master-key` encrypts dynamic configuration and must be backed up with the SQLite volume.
+- Official production images are published only to `ghcr.io/xiongwei-git/alertbridge`; `compose.yaml` pulls a version pinned in `.env`, while `compose.build.yaml` is the explicit local-build fallback.
 
 ## Accepted decisions
 
@@ -19,6 +20,7 @@
 - A Feishu channel may store one security keyword. The sender injects it into every text body or card title; Feishu error `19024` is permanent and must not enter the retry loop.
 - Keep SQLite at WAL + FULL synchronous with one database connection for predictable single-node reliability.
 - The production image is `scratch`, non-root, read-only, capability-free, and resource-limited.
+- GitHub Actions is the only official image publisher. Semantic version tags publish tested `linux/amd64` and `linux/arm64` images to GHCR with SBOM, provenance and attestation; Docker Hub is intentionally not used.
 - Do not add a second Caddy TLS layer under Baota.
 - Keep the admin UI server-rendered with no external runtime/CDN. Dynamic config uses AES-256-GCM and atomic immutable snapshots.
 - Keep reference fields safe to edit: client routes and route target channels use server-rendered checkbox choices, silence routes use a select, and technical terms expose hover/focus help without JavaScript.
@@ -33,5 +35,6 @@
 
 ```sh
 docker run --rm -v "$PWD:/src" -w /src golang:1.26.5-alpine3.24 sh -c 'go test ./... && go vet ./...'
+./test/release/run.sh
 ./test/e2e/run.sh
 ```

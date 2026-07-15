@@ -1,0 +1,8 @@
+services:
+  alertbridge:
+    build:
+      context: .
+      args:
+        VERSION: ${ALERTBRIDGE_VERSION:-local}
+    image: alertbridge:local
+    pull_policy: never
