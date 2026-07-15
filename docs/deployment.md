@@ -34,25 +34,28 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.2.0/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.2.1/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
 
 ## 4. 设置管理员引导凭据
 
-创建 `.env`：
+创建私有 Secret 目录和 `.env`：
 
 ```sh
 cd /www/wwwroot/alertbridge
 umask 077
+mkdir -p secrets
+chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.2.0' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.2.1' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' > .env
 
 ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')
-printf 'ALERTBRIDGE_ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD" >> .env
+printf '%s\n' "$ADMIN_PASSWORD" > secrets/admin_password
+chmod 604 secrets/admin_password
 printf '请立即保存管理员密码：%s\n' "$ADMIN_PASSWORD"
 unset ADMIN_PASSWORD
 chmod 600 .env
@@ -62,11 +65,13 @@ chmod 600 .env
 
 - 密码必须为 16–1024 字节，不能包含换行或 NUL；
 - 不存在项目内置的 `admin/admin` 通用密码；
-- Compose 从宿主机环境创建 Secret 文件，密码不会进入容器环境变量；
+- `secrets` 目录必须为 `0700`，其他宿主机用户无法进入；
+- 密码文件为 `0604`：owner 可读写，容器 UID 10001 可通过只读 bind mount 读取；仅当父目录保持 `0700` 时这个权限组合才安全；
+- Compose 把密码文件挂载为 `/run/secrets/admin_password`，密码不会进入容器环境变量或只读根文件系统；
 - 首次启动保存 Argon2id 哈希，不保存管理员明文密码；
 - 数据库已有管理员后，引导用户名和密码不再覆盖现有凭据。
 
-`.env` 仍需保留，以便后续 `docker compose up` 能解析 Secret 定义。直接修改其中的密码不会修改数据库里的登录密码。
+`.env` 和 `secrets/admin_password` 都需保留，以便后续 `docker compose up` 重新创建容器。数据库已有管理员后，修改密码文件不会修改后台登录密码。
 
 ## 5. 拉取并启动
 
@@ -206,7 +211,9 @@ docker run --rm \
          tar -czf /backup/alertbridge-secrets.tar.gz -C /secrets . &&
          chown "$HOST_UID:$HOST_GID" /backup/*.tar.gz'
 
+mkdir -p "$backup_dir/secrets"
 cp compose.yaml .env "$backup_dir/"
+cp secrets/admin_password "$backup_dir/secrets/"
 chmod -R go-rwx "$backup_dir"
 docker compose start alertbridge
 printf 'Backup created: %s\n' "$backup_dir"
@@ -248,8 +255,9 @@ curl -fsS http://127.0.0.1:18080/readyz
 
 | 现象 | 主要检查项 |
 | --- | --- |
-| 首次启动提示找不到管理员密码 | `.env` 是否包含 `ALERTBRIDGE_ADMIN_PASSWORD`；密码是否至少 16 字节；`docker compose config` 是否通过 |
-| 修改 `.env` 后登录密码没变化 | 这是安全设计：引导密码只在数据库为空时使用，不会覆盖现有管理员 |
+| 首次启动提示找不到管理员密码 | `secrets/admin_password` 是否存在且至少 16 字节；父目录是否为 `0700`、文件是否为 `0604`；`docker compose config` 是否通过 |
+| `container rootfs is marked read-only` | 使用了 v0.2.0 的环境来源 Secret；下载 v0.2.1 或更高版本的 `compose.yaml`，按第 4 节创建文件型 Secret |
+| 修改引导密码文件后登录密码没变化 | 这是安全设计：引导密码只在数据库为空时使用，不会覆盖现有管理员 |
 | 主密钥无法创建或读取 | `alertbridge-secrets` 卷是否可写；密钥是否被损坏；不要手工替换正在使用的主密钥 |
 | 后台登录后又回到登录页 | 必须通过 HTTPS；检查 Nginx 的 `Host`、`X-Forwarded-Proto` 和浏览器 Secure Cookie |
 | `/readyz` 返回 503 | 检查两个卷、磁盘空间、SQLite 日志和容器启动日志 |

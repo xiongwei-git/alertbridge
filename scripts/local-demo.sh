@@ -9,13 +9,15 @@ action=${1:-up}
 initialize() {
   umask 077
   mkdir -p "$tmp_dir"
+  chmod 700 "$tmp_dir"
   if [ ! -s "$password_file" ]; then
     openssl rand -base64 24 > "$password_file"
   fi
+  chmod 604 "$password_file"
 }
 
 compose() {
-  ALERTBRIDGE_ADMIN_PASSWORD=$(tr -d '\r\n' < "$password_file") \
+  ALERTBRIDGE_ADMIN_PASSWORD_FILE="$password_file" \
   ALERTBRIDGE_PORT=18081 \
   COMPOSE_PROJECT_NAME=alertbridge-local-demo \
   docker compose -f "$project_dir/compose.yaml" -f "$project_dir/compose.build.yaml" "$@"

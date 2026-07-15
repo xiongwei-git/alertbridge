@@ -9,6 +9,7 @@ prod_compose=$(mktemp)
 build_compose=$(mktemp)
 env_compose=$(mktemp)
 env_project=$(mktemp -d)
+secret_file="$env_project/secrets/admin_password"
 trap 'rm -f "$prod_compose" "$build_compose" "$env_compose"; rm -rf "$env_project"' EXIT INT TERM
 
 require_file() {
@@ -38,11 +39,20 @@ if ! grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' "$project_dir/VERSION"; then
   exit 1
 fi
 
-ALERTBRIDGE_ADMIN_PASSWORD=release-check-password ALERTBRIDGE_IMAGE_TAG=v9.8.7 docker compose -f "$project_dir/compose.yaml" config > "$prod_compose"
+mkdir -p "$(dirname "$secret_file")"
+chmod 700 "$(dirname "$secret_file")"
+printf '%s\n' 'release-check-password' > "$secret_file"
+chmod 604 "$secret_file"
+
+ALERTBRIDGE_ADMIN_PASSWORD_FILE="$secret_file" ALERTBRIDGE_IMAGE_TAG=v9.8.7 docker compose -f "$project_dir/compose.yaml" config > "$prod_compose"
 require_match 'image: ghcr\.io/xiongwei-git/alertbridge:v9\.8\.7' "$prod_compose"
-require_match 'environment: ALERTBRIDGE_ADMIN_PASSWORD' "$prod_compose"
+require_match 'file: .*/secrets/admin_password' "$prod_compose"
 require_match 'target: /run/secrets/admin_password' "$prod_compose"
 require_match 'target: /var/lib/alertbridge-secrets' "$prod_compose"
+if grep -Eq '^[[:space:]]+environment: ALERTBRIDGE_ADMIN_PASSWORD$' "$prod_compose"; then
+  printf 'read-only production services require a file-backed Compose secret\n' >&2
+  exit 1
+fi
 if grep -Eq '^[[:space:]]+build:' "$prod_compose"; then
   printf 'production Compose must pull a published image instead of building source\n' >&2
   exit 1
@@ -55,16 +65,15 @@ fi
 cp "$project_dir/compose.yaml" "$env_project/compose.yaml"
 printf '%s\n' \
   'ALERTBRIDGE_IMAGE_TAG=v9.8.7' \
-  'ALERTBRIDGE_ADMIN_USERNAME=admin' \
-  'ALERTBRIDGE_ADMIN_PASSWORD=env-file-password-strong' > "$env_project/.env"
+  'ALERTBRIDGE_ADMIN_USERNAME=admin' > "$env_project/.env"
 (cd "$env_project" && docker compose config) > "$env_compose"
 require_match 'image: ghcr\.io/xiongwei-git/alertbridge:v9\.8\.7' "$env_compose"
-if grep -Fq 'env-file-password-strong' "$env_compose"; then
+if grep -Fq 'release-check-password' "$env_compose"; then
   printf 'Compose rendered the bootstrap password into service metadata\n' >&2
   exit 1
 fi
 
-ALERTBRIDGE_ADMIN_PASSWORD=release-check-password ALERTBRIDGE_IMAGE_TAG=v9.8.7 ALERTBRIDGE_VERSION=test-build \
+ALERTBRIDGE_ADMIN_PASSWORD_FILE="$secret_file" ALERTBRIDGE_IMAGE_TAG=v9.8.7 ALERTBRIDGE_VERSION=test-build \
   docker compose -f "$project_dir/compose.yaml" -f "$project_dir/compose.build.yaml" config > "$build_compose"
 require_match 'image: alertbridge:local' "$build_compose"
 require_match '^[[:space:]]+build:' "$build_compose"
@@ -95,7 +104,8 @@ require_match '\./test/e2e/run\.sh' "$release_workflow"
 # the host directory private while allowing the non-root container to read the
 # mounted file itself.
 require_match 'chmod 700 "\$tmp_dir"' "$e2e_script"
-require_match 'chmod 644 "\$password_file"' "$e2e_script"
+require_match 'chmod 604 "\$password_file"' "$e2e_script"
+require_match 'docker compose -f "\$project_dir/compose.yaml" -f "\$compose_file"' "$e2e_script"
 
 if grep -R -n -E 'pull_request_target|docker\.io|index\.docker\.io' "$project_dir/.github/workflows"; then
   printf 'unsafe trigger or Docker Hub reference found in workflows\n' >&2
