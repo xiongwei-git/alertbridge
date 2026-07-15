@@ -11,7 +11,8 @@ admin_password=e2e-admin-password-strong
 password_file="$tmp_dir/admin-password"
 
 compose() {
-  E2E_PORT="$port" E2E_MOCK_PORT="$mock_port" E2E_ADMIN_PASSWORD_FILE="$password_file" docker compose -f "$compose_file" "$@"
+  ALERTBRIDGE_PORT="$port" E2E_MOCK_PORT="$mock_port" ALERTBRIDGE_ADMIN_PASSWORD_FILE="$password_file" \
+    docker compose -f "$project_dir/compose.yaml" -f "$compose_file" "$@"
 }
 
 cleanup() {
@@ -28,7 +29,7 @@ printf '%s\n' "$admin_password" > "$password_file"
 # Linux Compose bind-mounts file-backed secrets without changing ownership.
 # The private parent directory protects the host copy; world-readability on
 # the file lets the container's unprivileged UID read only its mounted secret.
-chmod 644 "$password_file"
+chmod 604 "$password_file"
 
 compose up -d --build
 
@@ -41,6 +42,21 @@ until curl -fsS "http://127.0.0.1:$port/readyz" >/dev/null 2>&1; do
   fi
   sleep 0.5
 done
+
+container_id=$(compose ps -q alertbridge)
+[ "$(docker inspect "$container_id" --format '{{.Config.User}}')" = "10001:0" ] || {
+  printf 'alertbridge container must run as UID 10001 with group 0\n' >&2
+  exit 1
+}
+[ "$(docker inspect "$container_id" --format '{{.HostConfig.ReadonlyRootfs}}')" = "true" ] || {
+  printf 'alertbridge container root filesystem must remain read-only\n' >&2
+  exit 1
+}
+secret_mount_rw=$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/run/secrets/admin_password"}}{{.RW}}{{end}}{{end}}')
+[ "$secret_mount_rw" = "false" ] || {
+  printf 'bootstrap password Secret must be mounted read-only\n' >&2
+  exit 1
+}
 
 login_status=$(curl -sS -o "$tmp_dir/login.html" -D "$tmp_dir/login.headers" -c "$tmp_dir/cookies.txt" -w '%{http_code}' \
   -H 'Content-Type: application/x-www-form-urlencoded' \

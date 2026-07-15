@@ -40,7 +40,7 @@ services:
 
 secrets:
   admin_password:
-    environment: ALERTBRIDGE_ADMIN_PASSWORD
+    file: ${ALERTBRIDGE_ADMIN_PASSWORD_FILE:-./secrets/admin_password}
 
 volumes:
   alertbridge-data:
