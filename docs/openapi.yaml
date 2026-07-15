@@ -1,0 +1,107 @@
+openapi: 3.1.0
+info:
+  title: AlertBridge API
+  version: 1.2.0
+paths:
+  /api/v1/events:
+    post:
+      summary: Accept a notification event
+      security:
+        - ClientID: []
+          Timestamp: []
+          Nonce: []
+          Signature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Event'
+      responses:
+        '202':
+          description: Event durably accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /healthz:
+    get:
+      summary: Liveness check
+      responses:
+        '200': { $ref: '#/components/responses/Health' }
+  /readyz:
+    get:
+      summary: Readiness check
+      responses:
+        '200': { $ref: '#/components/responses/Health' }
+        '503': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    ClientID: { type: apiKey, in: header, name: X-Notify-Client }
+    Timestamp: { type: apiKey, in: header, name: X-Notify-Timestamp }
+    Nonce: { type: apiKey, in: header, name: X-Notify-Nonce }
+    Signature: { type: apiKey, in: header, name: X-Notify-Signature }
+  schemas:
+    Event:
+      type: object
+      additionalProperties: false
+      required: [event_id, source, routing_key, status, severity, title, message, occurred_at]
+      properties:
+        event_id: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' }
+        source: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' }
+        routing_key: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' }
+        status: { type: string, enum: [firing, resolved, info, test] }
+        severity: { type: string, enum: [critical, warning, info] }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        message: { type: string, minLength: 1, maxLength: 4000 }
+        occurred_at: { type: string, format: date-time }
+        dedupe_key: { type: string, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' }
+        labels:
+          type: object
+          maxProperties: 20
+          additionalProperties: { type: string, maxLength: 256 }
+        url: { type: string, format: uri, maxLength: 2048 }
+    Accepted:
+      type: object
+      required: [request_id, event_record_id, event_id, outcome, deliveries]
+      properties:
+        request_id: { type: string }
+        event_record_id: { type: string }
+        event_id: { type: string }
+        outcome: { type: string, enum: [queued, suppressed, duplicate] }
+        reason: { type: string, enum: [dedupe_window, orphan_resolved, silence] }
+        deliveries: { type: integer, minimum: 0 }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            request_id: { type: string }
+  responses:
+    Error:
+      description: Structured error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Health:
+      description: Health status
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status]
+            properties:
+              status: { type: string }

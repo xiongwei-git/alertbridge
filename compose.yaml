@@ -1,0 +1,45 @@
+name: alertbridge
+
+services:
+  alertbridge:
+    build:
+      context: .
+      args:
+        VERSION: ${ALERTBRIDGE_VERSION:-local}
+    image: alertbridge:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ALERTBRIDGE_PORT:-18080}:8080"
+    environment:
+      ALERTBRIDGE_CONFIG: /etc/alertbridge/config.json
+      GOMEMLIMIT: 96MiB
+    user: "10001:${ALERTBRIDGE_GID:-0}"
+    volumes:
+      - ./config/config.json:/etc/alertbridge/config.json:ro
+      - ./secrets:/run/secrets:ro
+      - alertbridge-data:/var/lib/alertbridge
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: 0.50
+    stop_grace_period: 20s
+    healthcheck:
+      test: ["CMD", "/alertbridge", "-healthcheck"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  alertbridge-data:

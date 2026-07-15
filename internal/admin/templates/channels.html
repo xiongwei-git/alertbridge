@@ -1,0 +1,36 @@
+{{define "content"}}
+<section class="card-grid">
+{{range .Channels}}<article class="channel-card">
+  <header class="channel-header"><span class="type-badge">{{.Type}}</span><h2>{{.ID}}</h2><p class="channel-summary">{{.Summary}}</p></header>
+  <dl class="mini-list channel-meta">
+    <div><dt>状态 {{template "help" "只有启用的渠道才会被路由规则用于新告警。"}}</dt><dd><span class="status {{if .Enabled}}status-ok{{else}}status-neutral{{end}}">{{if .Enabled}}启用{{else}}停用{{end}}</span></dd></div>
+    <div><dt>密钥 {{template "help" "表示该渠道需要的签名密钥、Token 或密码是否已经保存。"}}</dt><dd>{{if .HasSecret}}已配置{{else}}未配置{{end}}</dd></div>
+    {{if eq .Type "feishu"}}<div><dt>安全关键词 {{template "help" "飞书机器人启用关键词校验时，每条消息必须包含的匹配词。"}}</dt><dd>{{if .HasKeyword}}已配置{{else}}未配置{{end}}</dd></div>{{end}}
+    <div><dt>更新时间</dt><dd class="nowrap">{{formatTime .UpdatedAt}}</dd></div>
+  </dl>
+  <footer class="channel-actions"><form method="post" action="/admin/channels/action"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><button class="button small secondary" name="action" value="test" type="submit">测试发送</button></form><form method="post" action="/admin/channels/action"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><button class="button small ghost" name="action" value="toggle" type="submit">{{if .Enabled}}停用{{else}}启用{{end}}</button></form><form method="post" action="/admin/channels/action"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><button class="button small danger" name="action" value="delete" type="submit">删除</button></form></footer>
+</article>{{else}}<div class="empty panel">还没有通知渠道</div>{{end}}
+</section>
+<section class="panel">
+  <div class="panel-heading"><div><p class="eyebrow">CHANNEL EDITOR</p><h2>新增或更新渠道</h2><p>使用已有 ID 会更新配置；敏感字段留空时保留原值，飞书关键词留空会清除配置。</p></div></div>
+  <form method="post" action="/admin/channels/save" class="form-grid channel-form"><input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>渠道 ID {{template "help" "通知渠道的唯一名称，路由规则通过这个 ID 选择发送目标。"}}<input name="id" placeholder="telegram.personal" required></label>
+    <label>类型 {{template "help" "选择消息实际使用的发送方式。"}}<select name="type"><option value="feishu">飞书</option><option value="telegram">Telegram</option><option value="ntfy">ntfy</option><option value="smtp">邮件 SMTP</option></select></label>
+    <label class="check field-check"><input type="checkbox" name="enabled" checked>启用</label>
+    <div class="section-label">HTTP 渠道</div>
+    <label>Webhook / API / ntfy URL {{template "help" "渠道接收消息的完整 HTTPS 地址；飞书填写机器人 Webhook。"}}<input type="url" name="endpoint" placeholder="https://open.feishu.cn/... 或 https://ntfy.sh/topic"></label>
+    <label>Token / 签名密钥 / Bot Token {{template "help" "按渠道类型填写认证信息；更新已有渠道时留空会保留原值。"}}<input type="password" name="secret" autocomplete="new-password" placeholder="更新时留空可保留"></label>
+    <label>Telegram Chat ID {{template "help" "Telegram 接收消息的用户、群组或频道标识，群组通常以负号开头。"}}<input name="chat_id" placeholder="-100123456789"></label>
+    <label>飞书消息类型 {{template "help" "卡片包含结构化状态和按钮；文本适合最简单的通知。"}}<select name="message_type"><option value="card">卡片</option><option value="text">文本</option></select></label>
+    <label>飞书安全关键词 {{template "help" "必须与飞书机器人安全设置中的任一关键词完全匹配。"}}<input name="keyword" maxlength="64" placeholder="例如：AlertBridge"><small class="field-hint">发送时会自动加入文本正文或卡片标题。</small></label>
+    <div class="section-label">SMTP（只支持 TLS/STARTTLS）</div>
+    <label>SMTP Host {{template "help" "邮件服务商提供的 SMTP 服务器域名。"}}<input name="smtp_host" placeholder="smtp.example.com"></label>
+    <label>SMTP Port {{template "help" "SMTP 服务端口；隐式 TLS 常用 465，STARTTLS 常用 587。"}}<input type="number" name="smtp_port" min="1" max="65535" placeholder="465"></label>
+    <label>SMTP 用户名 {{template "help" "登录 SMTP 服务器使用的账户名，通常是邮箱地址。"}}<input name="smtp_username" autocomplete="username"></label>
+    <label>发件人 {{template "help" "通知邮件显示的发件地址，可以包含显示名称。"}}<input name="smtp_from" placeholder="Ops &lt;ops@example.com&gt;"></label>
+    <label>收件人 {{template "help" "接收通知的邮箱地址；多个地址使用逗号分隔。"}}<input name="smtp_recipients" placeholder="owner@example.com"></label>
+    <label>TLS 模式 {{template "help" "决定连接从一开始加密，还是连接后升级为加密；不允许明文 SMTP。"}}<select name="smtp_mode"><option value="tls">隐式 TLS</option><option value="starttls">STARTTLS</option></select></label>
+    <div class="form-actions"><button class="button primary" type="submit">保存渠道</button></div>
+  </form>
+</section>
+{{end}}

@@ -1,0 +1,19 @@
+{{define "content"}}
+<section class="panel">
+  <div class="panel-heading"><div><p class="eyebrow">ROUTING MATRIX</p><h2>路由矩阵</h2><p>调用方只提交逻辑路由，具体通知目标由这里决定。</p></div></div>
+  <div class="table-wrap"><table class="data-table"><thead><tr>
+    <th>Routing Key {{template "help" "告警的逻辑分类名称，例如 infrastructure、proxy 或 security。"}}</th>
+    <th>严重程度 {{template "help" "critical 表示严重故障，warning 表示需要关注，info 用于普通和恢复通知。"}}</th>
+    <th>目标渠道 {{template "help" "匹配该路由和严重程度后，需要创建投递任务的通知渠道。"}}</th><th>操作</th>
+  </tr></thead><tbody>{{range .Routes}}<tr><td><code>{{.RoutingKey}}</code></td><td><span class="status {{statusClass .Severity}}">{{.Severity}}</span></td><td>{{join .Channels ", "}}</td><td><form method="post" action="/admin/routes/delete"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="routing_key" value="{{.RoutingKey}}"><input type="hidden" name="severity" value="{{.Severity}}"><button class="button small danger" type="submit">删除</button></form></td></tr>{{else}}<tr><td colspan="4" class="empty">还没有路由规则</td></tr>{{end}}</tbody></table></div>
+</section>
+<section class="panel compact">
+  <div class="panel-heading"><div><p class="eyebrow">UPSERT RULE</p><h2>新增或替换规则</h2><p>同一个 Routing Key 和严重程度再次保存时，会替换这一组的全部目标渠道。</p></div></div>
+  <form method="post" action="/admin/routes/save" class="form-grid"><input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Routing Key {{template "help" "告警的逻辑分类名称。可以选择已有名称，也可以输入新名称。"}}<input name="routing_key" list="route-key-options" placeholder="infrastructure" required><datalist id="route-key-options">{{range .RouteOptions}}<option value="{{.}}">{{end}}</datalist></label>
+    <label>严重程度 {{template "help" "路由按严重程度分别配置；恢复和普通通知通常使用 info。"}}<select name="severity"><option value="critical">critical</option><option value="warning">warning</option><option value="info">info</option></select></label>
+    <fieldset class="field-group span-two"><legend>目标渠道 {{template "help" "选择消息需要发送到的一个或多个已配置渠道。"}}</legend><div class="route-options">{{range .Channels}}<label class="route-choice"><input type="checkbox" name="channels" value="{{.ID}}"><code>{{.ID}}</code><small>{{.Type}}{{if not .Enabled}} · 已停用{{end}}</small></label>{{else}}<span class="empty-inline">还没有可选渠道，请先创建通知渠道。</span>{{end}}</div></fieldset>
+    <div class="form-actions">{{if not .Channels}}<a class="button secondary" href="/admin/channels">先创建通知渠道</a>{{else}}<button class="button primary" type="submit">保存路由</button>{{end}}</div>
+  </form>
+</section>
+{{end}}

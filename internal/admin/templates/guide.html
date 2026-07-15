@@ -1,0 +1,99 @@
+{{define "content"}}
+<section class="panel guide-hero">
+  <div><p class="eyebrow">INTEGRATION GUIDE</p><h2>外部服务如何调用</h2><p>页面会自动识别当前服务地址并代入示例。客户端 ID 用来标识调用方，密钥用来证明请求确实来自它；接入指南不会读取或回显密钥。</p></div>
+  <ol class="guide-steps" aria-label="接入步骤"><li><span>1</span><strong>保存身份</strong><small>记录 Client ID 和只显示一次的密钥</small></li><li><span>2</span><strong>签名请求</strong><small>对实际发送的原始 JSON 字节签名</small></li><li><span>3</span><strong>确认投递</strong><small>收到 202 后到投递记录核对结果</small></li></ol>
+</section>
+
+<section class="panel compact">
+  <div class="panel-heading"><div><p class="eyebrow">EXAMPLE IDENTITY</p><h2>选择示例客户端</h2><p>这里只代入客户端 ID 和当前可用的路由规则，不会显示已经保存的密钥。</p></div></div>
+  {{if .Clients}}
+  <form class="guide-selector" method="get" action="/admin/guide">
+    <label>客户端<select name="client">{{range .Clients}}<option value="{{.ID}}" {{if eq .ID $.GuideClientID}}selected{{end}}>{{.ID}}{{if not .Enabled}}（已停用）{{end}}</option>{{end}}</select></label>
+    <button class="button secondary" type="submit">更新示例</button>
+  </form>
+  <dl class="guide-facts"><div><dt>示例 Client ID</dt><dd><code>{{.GuideClientID}}</code></dd></div><div><dt>示例路由 / 级别</dt><dd><code>{{.GuideRoute}}</code> / <code>{{.GuideSeverity}}</code></dd></div><div><dt>允许路由 {{template "help" "请求正文中的 routing_key 必须是这里列出的一项。"}}</dt><dd class="chip-list">{{range .GuideRoutes}}<code>{{.}}</code>{{else}}无{{end}}</dd></div></dl>
+  {{if not .GuideClientEnabled}}<div class="notice error">当前客户端已停用，启用后请求才能通过认证。</div>{{end}}
+  {{if not .GuideRouteConfigured}}<div class="notice error">该客户端允许的路由还没有可用的路由矩阵规则。请先为至少一个允许路由配置严重程度和目标渠道，再运行示例。</div>{{end}}
+  {{else}}<div class="notice error">还没有客户端。请先创建客户端并安全保存生成的密钥。</div><a class="button primary" href="/admin/clients">创建客户端</a>{{end}}
+</section>
+
+<section class="panel guide-card">
+  <p class="eyebrow">CANONICAL EVENT API</p><h2>统一事件接口</h2><p>这是 AlertBridge 唯一的正式入站契约。调用方负责把自身事件映射成下面的统一结构，再对原始 JSON 正文签名。</p><code class="endpoint">POST {{.GuideBaseURL}}/api/v1/events</code><ul class="guide-list"><li>正文必须明确包含 <code>routing_key</code></li><li>服务可靠写入后返回 <code>202 Accepted</code></li><li>原始 JSON 正文上限为 32 KiB</li></ul>
+</section>
+
+<section class="panel">
+  <div class="panel-heading"><div><p class="eyebrow">AUTHENTICATION</p><h2>签名规则</h2><p>所有调用方都使用这一套认证方式。</p></div></div>
+  <div class="signature-flow" aria-label="签名计算过程"><div><span>1</span><p>计算正文摘要</p><code>hex(SHA256(raw_body))</code></div><i>→</i><div><span>2</span><p>拼接待签名文本</p><code>timestamp\nnonce\nbody_digest</code></div><i>→</i><div><span>3</span><p>使用客户端密钥</p><code>hex(HMAC-SHA256(secret, text))</code></div></div>
+  <div class="table-wrap"><table class="data-table guide-header-table"><thead><tr><th>请求头</th><th>用途</th></tr></thead><tbody><tr><td><code>X-Notify-Client</code></td><td>创建客户端时填写的 Client ID</td></tr><tr><td><code>X-Notify-Timestamp</code></td><td>当前 Unix 秒级时间戳，必须在服务器允许时间窗内</td></tr><tr><td><code>X-Notify-Nonce</code></td><td>每次请求使用新的 8–128 位随机字符串，防止重放</td></tr><tr><td><code>X-Notify-Signature</code></td><td>按上方规则计算的 64 位十六进制 HMAC-SHA256</td></tr></tbody></table></div>
+  <div class="notice error guide-warning"><strong>不要先签名再修改正文。</strong>空格、换行或字段顺序发生变化都会导致签名失效。密钥应放在环境变量或 Secret 文件中，不要写进 Git、日志或前端代码。</div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading"><div><p class="eyebrow">READY-TO-RUN EXAMPLES</p><h2>调用示例</h2><p>当前服务地址、客户端和可用路由已自动代入；只需粘贴刚才保存的密钥。</p></div></div>
+  <details class="guide-example" open><summary>Shell：curl + OpenSSL</summary><pre class="code-block" tabindex="0"><code>BASE_URL='{{.GuideBaseURL}}'
+CLIENT_ID='{{.GuideClientID}}'
+CLIENT_SECRET='粘贴创建客户端时保存的密钥'
+ROUTING_KEY='{{.GuideRoute}}'
+
+timestamp=$(date +%s)
+nonce=$(openssl rand -hex 12)
+occurred_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+body=$(printf '{"event_id":"manual-%s-%s","source":"manual-test","routing_key":"%s","status":"test","severity":"{{.GuideSeverity}}","title":"AlertBridge 接入测试","message":"外部客户端签名调用成功。","occurred_at":"%s"}' "$timestamp" "$nonce" "$ROUTING_KEY" "$occurred_at")
+body_digest=$(printf '%s' "$body" | openssl dgst -sha256 -hex | awk '{print $NF}')
+signature=$(printf '%s\n%s\n%s' "$timestamp" "$nonce" "$body_digest" | openssl dgst -sha256 -hmac "$CLIENT_SECRET" -hex | awk '{print $NF}')
+
+curl --fail-with-body --silent --show-error \
+  -H 'Content-Type: application/json' \
+  -H "X-Notify-Client: $CLIENT_ID" \
+  -H "X-Notify-Timestamp: $timestamp" \
+  -H "X-Notify-Nonce: $nonce" \
+  -H "X-Notify-Signature: $signature" \
+  --data-binary "$body" \
+  "$BASE_URL/api/v1/events"</code></pre></details>
+
+  <details class="guide-example"><summary>Python：仅使用标准库</summary><pre class="code-block" tabindex="0"><code>import hashlib
+import hmac
+import json
+import secrets
+import time
+import urllib.request
+from datetime import datetime, timezone
+
+BASE_URL = "{{.GuideBaseURL}}"
+CLIENT_ID = "{{.GuideClientID}}"
+CLIENT_SECRET = "粘贴创建客户端时保存的密钥"
+
+timestamp = str(int(time.time()))
+nonce = secrets.token_hex(12)
+payload = {
+    "event_id": f"python-{timestamp}-{nonce}",
+    "source": "python-example",
+    "routing_key": "{{.GuideRoute}}",
+    "status": "test",
+    "severity": "{{.GuideSeverity}}",
+    "title": "AlertBridge Python 接入测试",
+    "message": "Python 标准库签名调用成功。",
+    "occurred_at": datetime.now(timezone.utc).isoformat(),
+}
+body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+body_digest = hashlib.sha256(body).hexdigest()
+signing_text = f"{timestamp}\n{nonce}\n{body_digest}".encode()
+signature = hmac.new(CLIENT_SECRET.encode(), signing_text, hashlib.sha256).hexdigest()
+
+request = urllib.request.Request(
+    f"{BASE_URL}/api/v1/events",
+    data=body,
+    method="POST",
+    headers={
+        "Content-Type": "application/json",
+        "X-Notify-Client": CLIENT_ID,
+        "X-Notify-Timestamp": timestamp,
+        "X-Notify-Nonce": nonce,
+        "X-Notify-Signature": signature,
+    },
+)
+with urllib.request.urlopen(request) as response:
+    print(response.read().decode())</code></pre></details>
+</section>
+
+{{end}}

@@ -1,0 +1,17 @@
+{{define "content"}}
+<section class="panel">
+  <div class="panel-heading"><div><p class="eyebrow">MAINTENANCE</p><h2>静默记录</h2><p>静默期间事件仍会记录和更新故障状态，但不创建投递任务。</p></div></div>
+  <div class="table-wrap"><table class="data-table"><thead><tr><th>路由 {{template "help" "本条静默规则影响的逻辑路由；星号表示全部路由。"}}</th><th>级别 {{template "help" "本条静默规则影响的严重程度；星号表示全部级别。"}}</th><th>开始</th><th>结束</th><th>原因</th><th>操作</th></tr></thead><tbody>{{range .Silences}}<tr><td><code>{{.RoutingKey}}</code></td><td>{{.Severity}}</td><td class="nowrap">{{formatTime .StartsAt}}</td><td class="nowrap">{{formatTime .EndsAt}}</td><td>{{.Reason}}</td><td><form method="post" action="/admin/silences/delete"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><button class="button small danger" type="submit">删除</button></form></td></tr>{{else}}<tr><td colspan="6" class="empty">没有静默窗口</td></tr>{{end}}</tbody></table></div>
+</section>
+<section class="panel compact">
+  <div class="panel-heading"><div><p class="eyebrow">NEW SILENCE</p><h2>创建静默窗口</h2><p>最长 30 天；选择“全部”可覆盖所有路由或级别。</p></div></div>
+  <form method="post" action="/admin/silences/create" class="form-grid"><input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Routing Key {{template "help" "选择需要临时停止通知的逻辑路由。"}}<select name="routing_key" required><option value="*">全部路由</option>{{range .RouteOptions}}<option value="{{.}}">{{.}}</option>{{end}}</select></label>
+    <label>严重程度 {{template "help" "可以只静默某一级别，也可以选择全部级别。"}}<select name="severity"><option value="*">全部级别</option><option value="critical">critical</option><option value="warning">warning</option><option value="info">info</option></select></label>
+    <label>开始时间 {{template "help" "静默开始生效的本地时间。"}}<input type="datetime-local" name="starts_at" value="{{.NowLocal}}" required></label>
+    <label>结束时间 {{template "help" "静默自动失效的本地时间，最长不能超过 30 天。"}}<input type="datetime-local" name="ends_at" required></label>
+    <label class="span-two">原因 {{template "help" "记录为什么暂时不发送通知，便于后续审计。"}}<input name="reason" maxlength="200" placeholder="计划维护" required></label>
+    <div class="form-actions"><button class="button primary" type="submit">创建静默</button></div>
+  </form>
+</section>
+{{end}}

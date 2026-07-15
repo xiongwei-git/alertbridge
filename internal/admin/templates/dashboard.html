@@ -1,0 +1,14 @@
+{{define "content"}}
+<section class="metric-grid" aria-label="关键指标">
+  <article class="metric"><span>活跃故障</span><strong class="metric-danger">{{.Stats.ActiveIncidents}}</strong><small>当前 firing 事件</small></article>
+  <article class="metric"><span>今日事件</span><strong>{{.Stats.EventsToday}}</strong><small>已持久化接收</small></article>
+  <article class="metric"><span>等待投递</span><strong>{{.Stats.Pending}}</strong><small>pending 队列</small></article>
+  <article class="metric"><span>重试中</span><strong class="metric-warning">{{.Stats.Retrying}}</strong><small>等待下次尝试</small></article>
+  <article class="metric"><span>死信</span><strong class="metric-danger">{{.Stats.Dead}}</strong><small>需要人工处理</small></article>
+  <article class="metric"><span>已发送</span><strong class="metric-success">{{.Stats.Sent}}</strong><small>保留期内累计</small></article>
+</section>
+<section class="panel-grid two">
+  <article class="panel"><div class="panel-heading"><div><p class="eyebrow">CONFIGURATION</p><h2>网关配置</h2></div></div><dl class="summary-list"><div><dt>客户端</dt><dd>{{.Stats.Clients}}</dd></div><div><dt>通知渠道</dt><dd>{{.Stats.Channels}}</dd></div></dl><div class="button-row"><a class="button secondary" href="/admin/clients">管理客户端</a><a class="button secondary" href="/admin/channels">管理渠道</a></div></article>
+  <article class="panel"><div class="panel-heading"><div><p class="eyebrow">OPERATIONS</p><h2>处理建议</h2></div></div><ul class="check-list"><li>死信大于 0 时先检查渠道凭证与网络。</li><li>维护前创建有限时长的静默窗口。</li><li>客户端密钥轮换后立即更新调用方。</li></ul><a class="button primary" href="/admin/deliveries?status=dead">查看死信</a></article>
+</section>
+{{end}}

@@ -1,0 +1,46 @@
+name: alertbridge-e2e
+
+services:
+  mockfeishu:
+    build:
+      context: ./test/e2e/mock
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "127.0.0.1:${E2E_MOCK_PORT:-19090}:9090"
+
+  alertbridge:
+    build:
+      context: .
+      args:
+        VERSION: e2e
+    user: "10001:${ALERTBRIDGE_GID:-0}"
+    environment:
+      ALERTBRIDGE_CONFIG: /etc/alertbridge/config.json
+      ALERTBRIDGE_ALLOW_INSECURE_HTTP: "1"
+      ALERTBRIDGE_ALLOW_INSECURE_ADMIN_COOKIE: "1"
+      GOMEMLIMIT: 96MiB
+    volumes:
+      - ${E2E_TMP_DIR:-./test/e2e/tmp}/config.json:/etc/alertbridge/config.json:ro
+      - ${E2E_TMP_DIR:-./test/e2e/tmp}/secrets:/run/secrets:ro
+      - alertbridge-data:/var/lib/alertbridge
+    ports:
+      - "127.0.0.1:${E2E_PORT:-18081}:8080"
+    depends_on:
+      - mockfeishu
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/alertbridge", "-healthcheck"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+volumes:
+  alertbridge-data:

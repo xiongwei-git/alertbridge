@@ -1,0 +1,12 @@
+/config/config.json
+/.env
+/secrets/*
+!/secrets/README.md
+/backups/
+/data/
+/test/e2e/tmp/
+/scripts/send-base-test.sh
+.DS_Store
+*.db
+*.db-shm
+*.db-wal

@@ -1,0 +1,31 @@
+{{define "content"}}
+<section class="panel">
+  <div class="panel-heading"><div><p class="eyebrow">AUTHENTICATION</p><h2>现有客户端</h2><p>每个调用方使用独立 HMAC 密钥和路由权限。</p></div></div>
+  <div class="table-wrap"><table class="data-table client-table"><thead><tr>
+    <th>Client ID {{template "help" "调用方的唯一标识，会参与请求签名和日志定位。"}}</th>
+    <th>状态 {{template "help" "停用后，该客户端的所有新请求都会被拒绝。"}}</th>
+    <th>允许路由 {{template "help" "决定客户端可以提交哪些逻辑路由；请求正文中的 routing_key 必须是这里选中的一项。"}}</th>
+    <th>每分钟限制 {{template "help" "限制该客户端每分钟最多接收多少次请求，防止异常请求占满服务。"}}</th>
+    <th>更新时间</th><th>操作</th>
+  </tr></thead><tbody>
+  {{range .Clients}}{{$client := .}}<tr>
+    <td class="client-id-cell" data-label="Client ID"><code>{{.ID}}</code></td>
+    <td data-label="状态"><label class="client-state"><input form="client-edit-{{.ID}}" type="checkbox" name="enabled" {{if .Enabled}}checked{{end}} aria-label="{{.ID}} 启用状态"><span class="status {{if .Enabled}}status-ok{{else}}status-neutral{{end}}">{{if .Enabled}}启用{{else}}停用{{end}}</span></label></td>
+    <td data-label="允许路由"><fieldset class="route-options compact" aria-label="{{.ID}} 允许路由">{{range $.RouteOptions}}<label class="route-choice"><input form="client-edit-{{$client.ID}}" type="checkbox" name="routes" value="{{.}}" {{if has $client.AllowedRoutes .}}checked{{end}}><code>{{.}}</code></label>{{else}}<span class="empty-inline">请先创建路由规则</span>{{end}}</fieldset></td>
+    <td data-label="每分钟限制"><input form="client-edit-{{.ID}}" class="table-input rate-input" type="number" name="rate_limit" value="{{.RateLimitPerMinute}}" min="1" max="600" aria-label="{{.ID}} 每分钟限制"></td>
+    <td class="nowrap" data-label="更新时间">{{formatTime .UpdatedAt}}</td>
+    <td data-label="操作"><div class="action-row"><form id="client-edit-{{.ID}}" method="post" action="/admin/clients/action"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="action" value="update"><button class="button small secondary" type="submit">保存</button></form><form method="post" action="/admin/clients/action"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><button class="button small ghost" name="action" value="rotate" type="submit">轮换密钥</button></form><form method="post" action="/admin/clients/action"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><button class="button small danger" name="action" value="delete" type="submit">删除</button></form></div></td>
+  </tr>{{else}}<tr><td colspan="6" class="empty">还没有客户端</td></tr>{{end}}
+  </tbody></table></div>
+</section>
+<section class="panel compact">
+  <div class="panel-heading"><div><p class="eyebrow">NEW CLIENT</p><h2>创建客户端</h2><p>先选择系统中已经存在的逻辑路由，不需要手动输入名称。</p></div></div>
+  <form method="post" action="/admin/clients/create" class="form-grid"><input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Client ID {{template "help" "建议按调用方命名，例如 grafana-prod 或 gatus-hk；创建后不可直接改名。"}}<input name="id" pattern="[A-Za-z0-9][A-Za-z0-9._:-]*" maxlength="128" placeholder="grafana-prod" required></label>
+    <label>每分钟限制 {{template "help" "该客户端一分钟内允许提交的最大请求数，个人监控通常使用 30–60。"}}<input type="number" name="rate_limit" value="60" min="1" max="600" required></label>
+    <label class="check field-check"><input type="checkbox" name="enabled" checked>创建后立即启用</label>
+    <fieldset class="field-group span-two"><legend>允许路由 {{template "help" "决定客户端可以发送哪些类型的告警；至少选择一项。"}}</legend><div class="route-options">{{range .RouteOptions}}<label class="route-choice"><input type="checkbox" name="routes" value="{{.}}"><code>{{.}}</code></label>{{else}}<span class="empty-inline">还没有可选路由，请先前往“路由规则”创建。</span>{{end}}</div></fieldset>
+    <div class="form-actions">{{if not .RouteOptions}}<a class="button secondary" href="/admin/routes">先创建路由规则</a>{{else}}<button class="button primary" type="submit">创建并生成密钥</button>{{end}}</div>
+  </form>
+</section>
+{{end}}

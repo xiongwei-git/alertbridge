@@ -1,0 +1,8 @@
+.git
+.gitignore
+data
+secrets
+config/config.json
+docs
+test
+*.md

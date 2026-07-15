@@ -1,0 +1,58 @@
+{
+  "server": {
+    "listen": ":8080",
+    "body_limit_bytes": 32768
+  },
+  "database": {
+    "path": "/var/lib/alertbridge/alertbridge.db",
+    "retention": "720h"
+  },
+  "auth": {
+    "timestamp_tolerance": "5m",
+    "nonce_retention": "10m"
+  },
+  "dedupe": {
+    "window": "30m"
+  },
+  "worker": {
+    "poll_interval": "500ms",
+    "request_timeout": "8s",
+    "lease_duration": "30s",
+    "retry_delays": ["1s", "5s", "30s", "2m", "10m"],
+    "max_attempts": 6
+  },
+  "admin": {
+    "enabled": true,
+    "username": "admin",
+    "password_file": "/run/secrets/admin-password",
+    "master_key_file": "/run/secrets/master-key",
+    "session_lifetime": "12h",
+    "secure_cookie": true
+  },
+  "clients": {
+    "monitoring-client": {
+      "enabled": true,
+      "secret_file": "/run/secrets/client-monitoring",
+      "allowed_routes": ["infrastructure"],
+      "rate_limit_per_minute": 60
+    }
+  },
+  "channels": {
+    "feishu.ops": {
+      "type": "feishu",
+      "enabled": true,
+      "webhook_file": "/run/secrets/feishu-ops-webhook",
+      "signing_secret_file": "/run/secrets/feishu-ops-signing-secret",
+      "message_type": "card",
+      "keyword": "AlertBridge",
+      "allowed_hosts": ["open.feishu.cn"]
+    }
+  },
+  "routes": {
+    "infrastructure": {
+      "critical": ["feishu.ops"],
+      "warning": ["feishu.ops"],
+      "info": ["feishu.ops"]
+    }
+  }
+}

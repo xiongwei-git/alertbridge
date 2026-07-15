@@ -1,0 +1,43 @@
+{{define "layout"}}<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0e1b2c">
+  <title>{{.Title}} · AlertBridge</title>
+  <link rel="icon" href="/admin/assets/alertbridge-mark.svg?v=7" type="image/svg+xml">
+  <link rel="stylesheet" href="/admin/assets/app.css?v=7">
+</head>
+<body>
+{{if .Active}}
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="管理导航">
+      <a class="brand" href="/admin/" aria-label="AlertBridge 首页"><img class="brand-mark" src="/admin/assets/alertbridge-mark.svg?v=7" alt=""><span>AlertBridge<small>Notification Gateway</small></span></a>
+      <nav>
+        <a class="{{if eq .Active "dashboard"}}active{{end}}" href="/admin/">运行概览</a>
+        <a class="{{if eq .Active "clients"}}active{{end}}" href="/admin/clients">客户端</a>
+        <a class="{{if eq .Active "channels"}}active{{end}}" href="/admin/channels">通知渠道</a>
+        <a class="{{if eq .Active "routes"}}active{{end}}" href="/admin/routes">路由规则</a>
+        <a class="{{if eq .Active "silences"}}active{{end}}" href="/admin/silences">静默窗口</a>
+        <a class="{{if eq .Active "deliveries"}}active{{end}}" href="/admin/deliveries">投递记录</a>
+        <a class="{{if eq .Active "guide"}}active{{end}}" href="/admin/guide">接入指南</a>
+      </nav>
+      <form method="post" action="/admin/logout" class="logout-form">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button type="submit" class="button ghost full">退出登录</button>
+      </form>
+    </aside>
+    <main class="main-content">
+      <header class="page-header"><div><p class="eyebrow">CONTROL PLANE</p><h1>{{.Title}}</h1></div><span class="live-indicator"><i></i>服务运行中</span></header>
+      {{if .Notice}}<div class="notice success" role="status">{{.Notice}}</div>{{end}}
+      {{if .Error}}<div class="notice error" role="alert">{{.Error}}</div>{{end}}
+      {{template "content" .}}
+    </main>
+  </div>
+{{else}}
+  <main class="auth-shell">{{template "content" .}}</main>
+{{end}}
+</body>
+</html>{{end}}
+{{define "help"}}<span class="term-help" tabindex="0" role="note" aria-label="说明：{{.}}" title="{{.}}" data-tip="{{.}}">?</span>{{end}}

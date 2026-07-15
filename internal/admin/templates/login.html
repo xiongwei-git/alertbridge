@@ -1,0 +1,14 @@
+{{define "content"}}
+<section class="login-card" aria-labelledby="login-title">
+  <div class="brand login-brand"><img class="brand-mark" src="/admin/assets/alertbridge-mark.svg?v=7" alt=""><span>AlertBridge<small>Notification Gateway</small></span></div>
+  <p class="eyebrow">SECURE ADMIN</p>
+  <h1 id="login-title">登录管理后台</h1>
+  <p class="muted">管理客户端、通知渠道、路由和投递任务。</p>
+  {{if .Error}}<div class="notice error" role="alert">{{.Error}}</div>{{end}}
+  <form method="post" action="/admin/login" class="stack-form">
+    <label>用户名<input name="username" autocomplete="username" maxlength="64" required autofocus></label>
+    <label>密码<input type="password" name="password" autocomplete="current-password" maxlength="256" required></label>
+    <button type="submit" class="button primary full">安全登录</button>
+  </form>
+</section>
+{{end}}
