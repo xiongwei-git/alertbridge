@@ -10,6 +10,8 @@ import (
 
 func main() {
 	var count atomic.Int64
+	var lastPayload atomic.Value
+	lastPayload.Store([]byte(`{}`))
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hook", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -26,8 +28,13 @@ func main() {
 			_, _ = w.Write([]byte(`{"code":19024,"msg":"Key Words Not Found"}`))
 			return
 		}
+		lastPayload.Store(bytes.Clone(body))
 		count.Add(1)
 		_, _ = w.Write([]byte(`{"code":0,"msg":"success"}`))
+	})
+	mux.HandleFunc("/last", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(lastPayload.Load().([]byte))
 	})
 	mux.HandleFunc("/count", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

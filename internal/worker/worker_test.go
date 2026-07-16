@@ -12,16 +12,40 @@ import (
 )
 
 type fakeSender struct {
-	calls int
-	fail  bool
+	calls     int
+	fail      bool
+	lastEvent domain.Event
 }
 
-func (s *fakeSender) Send(context.Context, domain.Event) (int, error) {
+func (s *fakeSender) Send(_ context.Context, event domain.Event) (int, error) {
 	s.calls++
+	s.lastEvent = event
 	if s.fail {
 		return 503, &channel.SendError{Message: "temporary", StatusCode: 503, Retryable: true}
 	}
 	return 200, nil
+}
+
+func TestProcessOneConvertsEventToDisplayTimezone(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "alertbridge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Date(2026, 7, 15, 17, 55, 36, 0, time.UTC)
+	event := domain.Event{EventID: "evt-timezone", Source: "proxymonitor", RoutingKey: "base", Status: domain.StatusInfo, Severity: domain.SeverityInfo, Title: "Test", Message: "Test", OccurredAt: now}
+	if _, err := db.AcceptEvent(context.Background(), store.AcceptParams{ClientID: "client", Event: event, Targets: []string{"feishu.ops"}, Now: now, DedupeWindow: time.Minute, RawPayload: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	sender := &fakeSender{}
+	displayLocation := time.FixedZone("Asia/Shanghai", 8*60*60)
+	w := New(db, map[string]channel.Sender{"feishu.ops": sender}, Config{DisplayLocation: displayLocation})
+	if processed, err := w.ProcessOne(context.Background(), now); err != nil || !processed {
+		t.Fatalf("ProcessOne() = %v, %v", processed, err)
+	}
+	if got := sender.lastEvent.OccurredAt.Format(time.RFC3339); got != "2026-07-16T01:55:36+08:00" {
+		t.Fatalf("display occurrence = %q", got)
+	}
 }
 
 func TestProcessOneRetriesThenSucceeds(t *testing.T) {

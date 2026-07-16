@@ -34,7 +34,7 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.2.1/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.2.2/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
@@ -49,13 +49,14 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.2.1' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.2.2' \
   'ALERTBRIDGE_PORT=18080' \
-  'ALERTBRIDGE_ADMIN_USERNAME=admin' > .env
+  'ALERTBRIDGE_ADMIN_USERNAME=admin' \
+  'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
 
 ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')
 printf '%s\n' "$ADMIN_PASSWORD" > secrets/admin_password
-chmod 604 secrets/admin_password
+chmod 644 secrets/admin_password
 printf '请立即保存管理员密码：%s\n' "$ADMIN_PASSWORD"
 unset ADMIN_PASSWORD
 chmod 600 .env
@@ -66,7 +67,7 @@ chmod 600 .env
 - 密码必须为 16–1024 字节，不能包含换行或 NUL；
 - 不存在项目内置的 `admin/admin` 通用密码；
 - `secrets` 目录必须为 `0700`，其他宿主机用户无法进入；
-- 密码文件为 `0604`：owner 可读写，容器 UID 10001 可通过只读 bind mount 读取；仅当父目录保持 `0700` 时这个权限组合才安全；
+- 密码文件为 `0644`：owner 可读写，容器 UID 10001 可在不同宿主机文件组下通过只读 bind mount 读取；仅当父目录保持 `0700` 时这个权限组合才安全；
 - Compose 把密码文件挂载为 `/run/secrets/admin_password`，密码不会进入容器环境变量或只读根文件系统；
 - 首次启动保存 Argon2id 哈希，不保存管理员明文密码；
 - 数据库已有管理员后，引导用户名和密码不再覆盖现有凭据。
@@ -99,6 +100,8 @@ curl -fsS http://127.0.0.1:18080/readyz
 4. 以空客户端、空渠道、空路由进入管理后台。
 
 Compose 默认启用：回环端口、非 root UID 10001、只读根文件系统、无 capabilities、`no-new-privileges`、128 MiB 内存、0.5 CPU、进程限制和日志轮转。
+
+服务内部、SQLite 和 API 时间语义保持 UTC。管理后台与通知内容在输出时转换为 `.env` 中的 `ALERTBRIDGE_DISPLAY_TIMEZONE`，默认是 `Asia/Shanghai`。该值必须是 IANA 时区名，例如 `UTC`、`Asia/Shanghai` 或 `America/Los_Angeles`；非法值会阻止服务启动，避免静默显示错误时间。
 
 ## 6. 宝塔 HTTPS 反向代理
 
@@ -255,7 +258,7 @@ curl -fsS http://127.0.0.1:18080/readyz
 
 | 现象 | 主要检查项 |
 | --- | --- |
-| 首次启动提示找不到管理员密码 | `secrets/admin_password` 是否存在且至少 16 字节；父目录是否为 `0700`、文件是否为 `0604`；`docker compose config` 是否通过 |
+| 首次启动提示找不到管理员密码 | `secrets/admin_password` 是否存在且至少 16 字节；父目录是否为 `0700`、文件是否为 `0644`；`docker compose config` 是否通过 |
 | `container rootfs is marked read-only` | 使用了 v0.2.0 的环境来源 Secret；下载 v0.2.1 或更高版本的 `compose.yaml`，按第 4 节创建文件型 Secret |
 | 修改引导密码文件后登录密码没变化 | 这是安全设计：引导密码只在数据库为空时使用，不会覆盖现有管理员 |
 | 主密钥无法创建或读取 | `alertbridge-secrets` 卷是否可写；密钥是否被损坏；不要手工替换正在使用的主密钥 |
@@ -267,5 +270,6 @@ curl -fsS http://127.0.0.1:18080/readyz
 | 飞书返回 `19024` | 后台“安全关键词”必须命中机器人配置的任一关键词 |
 | GHCR 拉取失败 | 使用已发布完整版本；确认 VPS 可访问 `ghcr.io`；公开镜像不需要登录 |
 | 18080 被占用 | 修改 `.env` 的 `ALERTBRIDGE_PORT` 后重新创建容器 |
+| 通知时间比北京时间少 8 小时 | 使用 v0.2.2 或更高版本；确认 `ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai`，不要修改服务器系统时钟 |
 
 不要通过关闭 HMAC、使用固定弱密码、把密码放入容器环境变量、放宽出站地址校验或开放应用端口来绕过故障。
