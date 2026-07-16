@@ -12,12 +12,13 @@ import (
 )
 
 type Config struct {
-	PollInterval  time.Duration
-	LeaseDuration time.Duration
-	RetryDelays   []time.Duration
-	MaxAttempts   int
-	Retention     time.Duration
-	SenderFor     func(string) (channel.Sender, bool)
+	PollInterval    time.Duration
+	LeaseDuration   time.Duration
+	RetryDelays     []time.Duration
+	MaxAttempts     int
+	Retention       time.Duration
+	SenderFor       func(string) (channel.Sender, bool)
+	DisplayLocation *time.Location
 }
 
 type Worker struct {
@@ -43,6 +44,9 @@ func New(database *store.Store, senders map[string]channel.Sender, cfg Config) *
 	}
 	if cfg.Retention <= 0 {
 		cfg.Retention = 30 * 24 * time.Hour
+	}
+	if cfg.DisplayLocation == nil {
+		cfg.DisplayLocation = time.UTC
 	}
 	senderFor := cfg.SenderFor
 	if senderFor == nil {
@@ -94,7 +98,13 @@ func (w *Worker) ProcessOne(ctx context.Context, now time.Time) (bool, error) {
 		err := w.store.CompleteFailure(ctx, delivery.ID, delivery.Attempts, now, "channel is unavailable", 0, true)
 		return true, err
 	}
-	statusCode, sendErr := sender.Send(ctx, delivery.Event)
+	event := delivery.Event
+	event.OccurredAt = event.OccurredAt.In(w.cfg.DisplayLocation)
+	if event.IncidentStartedAt != nil {
+		started := event.IncidentStartedAt.In(w.cfg.DisplayLocation)
+		event.IncidentStartedAt = &started
+	}
+	statusCode, sendErr := sender.Send(ctx, event)
 	if sendErr == nil {
 		if err := w.store.CompleteSuccess(ctx, delivery.ID, statusCode, now); err != nil {
 			return true, err

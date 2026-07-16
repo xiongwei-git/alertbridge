@@ -39,6 +39,7 @@ type Config struct {
 	SessionLifetime time.Duration
 	SecureCookie    bool
 	Now             func() time.Time
+	DisplayLocation *time.Location
 	Logger          *slog.Logger
 }
 
@@ -90,6 +91,9 @@ func New(cfg Config) (*Handler, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	if cfg.DisplayLocation == nil {
+		cfg.DisplayLocation = time.UTC
+	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
@@ -110,13 +114,13 @@ func New(cfg Config) (*Handler, error) {
 			if value.IsZero() {
 				return "—"
 			}
-			return value.Local().Format("2006-01-02 15:04:05")
+			return value.In(cfg.DisplayLocation).Format("2006-01-02 15:04:05")
 		},
 		"formatOptionalTime": func(value *time.Time) string {
 			if value == nil {
 				return "—"
 			}
-			return value.Local().Format("2006-01-02 15:04:05")
+			return value.In(cfg.DisplayLocation).Format("2006-01-02 15:04:05")
 		},
 		"statusClass": func(value string) string {
 			switch value {
@@ -484,7 +488,7 @@ func (h *Handler) silences(w http.ResponseWriter, r *http.Request, session store
 	data.Silences = records
 	data.Routes = h.cfg.Gateway.Routes()
 	data.RouteOptions = routeOptions(nil, data.Routes)
-	data.NowLocal = h.cfg.Now().Local().Format("2006-01-02T15:04")
+	data.NowLocal = h.cfg.Now().In(h.cfg.DisplayLocation).Format("2006-01-02T15:04")
 	h.render(w, http.StatusOK, "silences.html", data)
 }
 

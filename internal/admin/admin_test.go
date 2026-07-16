@@ -153,7 +153,26 @@ func TestAdminRejectsNonFormWritesAndEscapesDeliveryContent(t *testing.T) {
 	}
 }
 
+func TestAdminFormatsTimesInConfiguredDisplayTimezone(t *testing.T) {
+	displayLocation := time.FixedZone("Asia/Shanghai", 8*60*60)
+	handler, database := newTestHandlerWithDisplayLocation(t, displayLocation)
+	now := time.Date(2026, 7, 15, 17, 55, 36, 0, time.UTC)
+	_, err := database.AcceptEvent(context.Background(), store.AcceptParams{ClientID: "seed-client", Event: domain.Event{EventID: "timezone-event", Source: "test", RoutingKey: "ops", Status: domain.StatusInfo, Severity: domain.SeverityCritical, Title: "timezone", Message: "body", OccurredAt: now}, Targets: []string{"feishu-test"}, Now: now, DedupeWindow: time.Minute, RawPayload: []byte(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := serve(handler, http.MethodPost, "/admin/login", url.Values{"username": {"admin"}, "password": {"correct horse battery staple"}}, nil)
+	deliveries := serve(handler, http.MethodGet, "/admin/deliveries", nil, login.Result().Cookies()[0])
+	if !strings.Contains(deliveries.Body.String(), "2026-07-16 01:55:36") {
+		t.Fatalf("delivery time was not formatted in display timezone: %s", deliveries.Body.String())
+	}
+}
+
 func newTestHandler(t *testing.T) (*Handler, *store.Store) {
+	return newTestHandlerWithDisplayLocation(t, time.UTC)
+}
+
+func newTestHandlerWithDisplayLocation(t *testing.T, displayLocation *time.Location) (*Handler, *store.Store) {
 	t.Helper()
 	database, err := store.Open(filepath.Join(t.TempDir(), "alertbridge.db"))
 	if err != nil {
@@ -185,7 +204,7 @@ func newTestHandler(t *testing.T) (*Handler, *store.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := New(Config{Database: database, Gateway: gateway, Username: "admin", PasswordHash: encoded, SessionLifetime: time.Hour, SecureCookie: false})
+	handler, err := New(Config{Database: database, Gateway: gateway, Username: "admin", PasswordHash: encoded, SessionLifetime: time.Hour, SecureCookie: false, DisplayLocation: displayLocation})
 	if err != nil {
 		t.Fatal(err)
 	}

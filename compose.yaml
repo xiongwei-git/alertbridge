@@ -9,6 +9,7 @@ services:
     environment:
       ALERTBRIDGE_ADMIN_USERNAME: ${ALERTBRIDGE_ADMIN_USERNAME:-admin}
       ALERTBRIDGE_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      ALERTBRIDGE_DISPLAY_TIMEZONE: ${ALERTBRIDGE_DISPLAY_TIMEZONE:-Asia/Shanghai}
       GOMEMLIMIT: 96MiB
     secrets:
       - admin_password

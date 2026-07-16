@@ -2,10 +2,12 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"time"
+	_ "time/tzdata"
 )
 
 type Config struct {
@@ -15,6 +17,7 @@ type Config struct {
 	Dedupe   DedupeConfig
 	Worker   WorkerConfig
 	Admin    AdminConfig
+	Display  DisplayConfig
 }
 
 type ServerConfig struct {
@@ -50,9 +53,19 @@ type AdminConfig struct {
 	SecureCookie    bool
 }
 
+type DisplayConfig struct {
+	TimeZone string
+	Location *time.Location
+}
+
 var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$`)
 
 func Load() (Config, error) {
+	displayTimeZone := envOr("ALERTBRIDGE_DISPLAY_TIMEZONE", "Asia/Shanghai")
+	displayLocation, err := time.LoadLocation(displayTimeZone)
+	if err != nil {
+		return Config{}, fmt.Errorf("load display timezone %q: %w", displayTimeZone, err)
+	}
 	cfg := Config{
 		Server:   ServerConfig{Listen: envOr("ALERTBRIDGE_LISTEN", ":8080"), BodyLimitBytes: 32 * 1024},
 		Database: DatabaseConfig{Path: envOr("ALERTBRIDGE_DATABASE_PATH", "/var/lib/alertbridge/alertbridge.db"), Retention: 30 * 24 * time.Hour},
@@ -67,6 +80,7 @@ func Load() (Config, error) {
 			SessionLifetime: 12 * time.Hour,
 			SecureCookie:    os.Getenv("ALERTBRIDGE_ALLOW_INSECURE_ADMIN_COOKIE") != "1",
 		},
+		Display: DisplayConfig{TimeZone: displayTimeZone, Location: displayLocation},
 	}
 	if !usernamePattern.MatchString(cfg.Admin.Username) {
 		return Config{}, errors.New("admin username must be a valid identifier with at most 64 bytes")

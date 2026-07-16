@@ -65,7 +65,7 @@ func main() {
 		logger.Error("initialize dynamic configuration", "error", err)
 		os.Exit(1)
 	}
-	adminUI, err := admin.New(admin.Config{Database: database, Gateway: gateway, Username: boot.Credential.Username, PasswordHash: boot.Credential.PasswordHash, SessionLifetime: cfg.Admin.SessionLifetime, SecureCookie: cfg.Admin.SecureCookie, Logger: logger})
+	adminUI, err := admin.New(admin.Config{Database: database, Gateway: gateway, Username: boot.Credential.Username, PasswordHash: boot.Credential.PasswordHash, SessionLifetime: cfg.Admin.SessionLifetime, SecureCookie: cfg.Admin.SecureCookie, DisplayLocation: cfg.Display.Location, Logger: logger})
 	if err != nil {
 		logger.Error("initialize admin console", "error", err)
 		os.Exit(1)
@@ -74,7 +74,7 @@ func main() {
 	verifier := auth.Verifier{Lookup: gateway.LookupClient, Tolerance: cfg.Auth.TimestampTolerance}
 	handler := httpapi.New(httpapi.Config{Database: database, Verifier: verifier, Admin: adminUI, ResolveTargets: gateway.ResolveTargets, IsSilenced: gateway.IsSilenced, NonceRetention: cfg.Auth.NonceRetention, DedupeWindow: cfg.Dedupe.Window, BodyLimitBytes: cfg.Server.BodyLimitBytes, Logger: logger})
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
-	deliveryWorker := worker.New(database, nil, worker.Config{PollInterval: cfg.Worker.PollInterval, LeaseDuration: cfg.Worker.LeaseDuration, RetryDelays: cfg.Worker.RetryDelays, MaxAttempts: cfg.Worker.MaxAttempts, Retention: cfg.Database.Retention, SenderFor: gateway.Sender}).WithLogger(logger)
+	deliveryWorker := worker.New(database, nil, worker.Config{PollInterval: cfg.Worker.PollInterval, LeaseDuration: cfg.Worker.LeaseDuration, RetryDelays: cfg.Worker.RetryDelays, MaxAttempts: cfg.Worker.MaxAttempts, Retention: cfg.Database.Retention, SenderFor: gateway.Sender, DisplayLocation: cfg.Display.Location}).WithLogger(logger)
 	go deliveryWorker.Run(ctx)
 	go func() {
 		<-ctx.Done()
@@ -84,7 +84,7 @@ func main() {
 			logger.Error("HTTP shutdown", "error", err)
 		}
 	}()
-	logger.Info("AlertBridge started", "version", version, "listen", cfg.Server.Listen)
+	logger.Info("AlertBridge started", "version", version, "listen", cfg.Server.Listen, "display_timezone", cfg.Display.TimeZone)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("HTTP server stopped", "error", err)
 		os.Exit(1)

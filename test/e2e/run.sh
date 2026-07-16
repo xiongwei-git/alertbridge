@@ -27,9 +27,9 @@ tmp_dir=$(CDPATH= cd -- "$tmp_dir" && pwd -P)
 password_file="$tmp_dir/admin-password"
 printf '%s\n' "$admin_password" > "$password_file"
 # Linux Compose bind-mounts file-backed secrets without changing ownership.
-# The private parent directory protects the host copy; world-readability on
-# the file lets the container's unprivileged UID read only its mounted secret.
-chmod 604 "$password_file"
+# The private parent directory protects the host copy; read access on both
+# group and other keeps the mount portable when the host file group varies.
+chmod 644 "$password_file"
 
 compose up -d --build
 
@@ -167,6 +167,8 @@ until curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":1'; do
   [ "$attempt" -lt 30 ] || exit 1
   sleep 0.2
 done
+curl -fsS "http://127.0.0.1:$mock_port/last" > "$tmp_dir/last-notification.json"
+grep -Eq '时间[^+]*\+08:00' "$tmp_dir/last-notification.json"
 
 container_id=$(compose ps -q alertbridge)
 if docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -Fq "$admin_password"; then

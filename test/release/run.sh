@@ -42,13 +42,14 @@ fi
 mkdir -p "$(dirname "$secret_file")"
 chmod 700 "$(dirname "$secret_file")"
 printf '%s\n' 'release-check-password' > "$secret_file"
-chmod 604 "$secret_file"
+chmod 644 "$secret_file"
 
 ALERTBRIDGE_ADMIN_PASSWORD_FILE="$secret_file" ALERTBRIDGE_IMAGE_TAG=v9.8.7 docker compose -f "$project_dir/compose.yaml" config > "$prod_compose"
 require_match 'image: ghcr\.io/xiongwei-git/alertbridge:v9\.8\.7' "$prod_compose"
 require_match 'file: .*/secrets/admin_password' "$prod_compose"
 require_match 'target: /run/secrets/admin_password' "$prod_compose"
 require_match 'target: /var/lib/alertbridge-secrets' "$prod_compose"
+require_match 'ALERTBRIDGE_DISPLAY_TIMEZONE: Asia/Shanghai' "$prod_compose"
 if grep -Eq '^[[:space:]]+environment: ALERTBRIDGE_ADMIN_PASSWORD$' "$prod_compose"; then
   printf 'read-only production services require a file-backed Compose secret\n' >&2
   exit 1
@@ -104,7 +105,7 @@ require_match '\./test/e2e/run\.sh' "$release_workflow"
 # the host directory private while allowing the non-root container to read the
 # mounted file itself.
 require_match 'chmod 700 "\$tmp_dir"' "$e2e_script"
-require_match 'chmod 604 "\$password_file"' "$e2e_script"
+require_match 'chmod 644 "\$password_file"' "$e2e_script"
 require_match 'docker compose -f "\$project_dir/compose.yaml" -f "\$compose_file"' "$e2e_script"
 
 if grep -R -n -E 'pull_request_target|docker\.io|index\.docker\.io' "$project_dir/.github/workflows"; then

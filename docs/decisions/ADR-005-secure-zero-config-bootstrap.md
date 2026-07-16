@@ -18,7 +18,7 @@ Requiring operators to clone the source repository, copy JSON, create several ho
 
 - Runtime and security defaults are compiled into the binary. Production startup no longer reads JSON configuration.
 - Compose bind-mounts an operator-created password file as the administrator bootstrap Secret at `/run/secrets/admin_password`; the value is not placed in the service environment or copied into the container root filesystem.
-- The password file lives below a host directory with mode `0700`. Its mode is `0604`: the owner retains read/write access while the container's otherwise unrelated non-root UID can read the isolated bind mount. This is safe only because other host users cannot traverse the private parent directory.
+- The password file lives below a host directory with mode `0700`. Its mode is `0644`: the owner retains read/write access while the non-root container can read the isolated bind mount regardless of the host file's group. This is safe only because other host users cannot traverse the private parent directory.
 - The bootstrap username defaults to `admin`. Passwords must contain 16–1024 bytes and have no line break or NUL.
 - On an empty database, the password is converted to an Argon2id PHC string using 64 MiB, three passes, one lane, a random 128-bit salt and a 256-bit tag. Login verification is serialized to prevent concurrent memory-exhaustion attacks. Parameter parsing is bounded before allocation. The design follows the memory-constrained Argon2id direction in [RFC 9106](https://www.rfc-editor.org/rfc/rfc9106.html).
 - Once a credential exists, bootstrap username and password inputs are ignored; they never overwrite the database credential.
