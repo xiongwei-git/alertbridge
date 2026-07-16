@@ -8,9 +8,10 @@ e2e_script="$project_dir/test/e2e/run.sh"
 prod_compose=$(mktemp)
 build_compose=$(mktemp)
 env_compose=$(mktemp)
+acr_compose=$(mktemp)
 env_project=$(mktemp -d)
 secret_file="$env_project/secrets/admin_password"
-trap 'rm -f "$prod_compose" "$build_compose" "$env_compose"; rm -rf "$env_project"' EXIT INT TERM
+trap 'rm -f "$prod_compose" "$build_compose" "$env_compose" "$acr_compose"; rm -rf "$env_project"' EXIT INT TERM
 
 require_file() {
   [ -f "$1" ] || {
@@ -33,6 +34,7 @@ require_file "$release_workflow"
 require_file "$e2e_script"
 require_file "$project_dir/compose.build.yaml"
 require_file "$project_dir/docs/decisions/ADR-004-github-container-registry.md"
+require_file "$project_dir/docs/decisions/ADR-007-optional-acr-deployment-mirror.md"
 require_file "$project_dir/VERSION"
 if ! grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' "$project_dir/VERSION"; then
   printf 'VERSION must contain one semantic version such as v0.2.0\n' >&2
@@ -63,6 +65,12 @@ if grep -Eq 'ALERTBRIDGE_CONFIG|config\.json|type: bind' "$prod_compose"; then
   exit 1
 fi
 
+ALERTBRIDGE_ADMIN_PASSWORD_FILE="$secret_file" \
+  ALERTBRIDGE_IMAGE=cr.example.invalid/example/alertbridge \
+  ALERTBRIDGE_IMAGE_TAG=v9.8.7 \
+  docker compose -f "$project_dir/compose.yaml" config > "$acr_compose"
+require_match 'image: cr\.example\.invalid/example/alertbridge:v9\.8\.7' "$acr_compose"
+
 cp "$project_dir/compose.yaml" "$env_project/compose.yaml"
 printf '%s\n' \
   'ALERTBRIDGE_IMAGE_TAG=v9.8.7' \
@@ -92,6 +100,11 @@ require_match 'attestations: write' "$release_workflow"
 require_match 'id-token: write' "$release_workflow"
 require_match 'REGISTRY: ghcr\.io' "$release_workflow"
 require_match 'IMAGE_NAME: \$\{\{ github\.repository \}\}' "$release_workflow"
+require_match 'ACR_IMAGE: \$\{\{ vars\.ACR_IMAGE \}\}' "$release_workflow"
+require_match 'ACR_USERNAME: \$\{\{ vars\.ACR_USERNAME \}\}' "$release_workflow"
+require_match 'ACR_PASSWORD: \$\{\{ secrets\.ACR_PASSWORD \}\}' "$release_workflow"
+require_match 'docker buildx imagetools create' "$release_workflow"
+require_match 'needs\.publish\.outputs\.digest' "$release_workflow"
 require_match 'linux/amd64,linux/arm64' "$release_workflow"
 require_match 'type=semver,pattern=\{\{raw\}\}' "$release_workflow"
 require_match 'type=semver,pattern=v\{\{major\}\}\.\{\{minor\}\}' "$release_workflow"
@@ -125,4 +138,4 @@ if [ -n "$bad_uses" ]; then
   exit 1
 fi
 
-printf 'Release configuration checks passed: repository-free GHCR deployment, Compose secret bootstrap, isolated persistent key volume, pinned actions, least privilege, and multi-architecture publishing.\n'
+printf 'Release configuration checks passed: repository-free GHCR deployment, optional ACR mirror, Compose secret bootstrap, isolated persistent key volume, pinned actions, least privilege, and multi-architecture publishing.\n'
