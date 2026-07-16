@@ -2,32 +2,43 @@
 
 ## Current state (2026-07-16)
 
-- AlertBridge v0.2.1 is a lightweight Docker notification gateway with a server-rendered management console.
-- Runtime: Go 1.26.5, pure-Go SQLite, one HTTP process, one SQLite connection, and one persistent delivery worker.
-- Public API: `POST /api/v1/events`; health: `/healthz` and `/readyz`; admin: `/admin/`.
-- Implemented: per-client HMAC, replay protection, route authorization, rate limiting, idempotency, dedupe, recovery duration, silences, credential rotation, delivery inspection/retry, and dead letters.
+- AlertBridge v0.2.3 is a lightweight, single-instance notification gateway ready for its current production stage.
+- Build toolchain: Go 1.26.5 with module language level 1.25.0. Runtime uses pure-Go SQLite, one HTTP process, one SQLite connection, and one persistent delivery worker.
+- Public API: `POST /api/v1/events`; health: `/healthz` and `/readyz`; management console: `/admin/`.
+- Implemented: per-client HMAC, replay protection, route authorization, rate limiting, idempotency, incident lifecycle through matching `firing` and `resolved` events, silences, credential rotation, persistent delivery retries, manual retry, and dead letters.
 - Channel adapters: Feishu text/cards with optional security-keyword injection, Telegram Bot, ntfy, and TLS/STARTTLS SMTP.
-- Production deployment needs `compose.yaml`, `.env`, and `secrets/admin_password`; it pulls `ghcr.io/xiongwei-git/alertbridge` and does not require a repository clone or JSON configuration.
-- First startup accepts an operator-selected administrator password through a file-backed Compose Secret, stores only an Argon2id hash, and creates no business configuration. The host Secret directory is `0700`; environment-sourced Compose Secrets are not used because Docker Compose cannot materialize them into a read-only container rootfs.
-- The AES-256-GCM master key is generated atomically with mode `0600` in the separate `alertbridge-secrets` volume. An initialized database must fail startup if that key is missing.
-- `alertbridge-data` and `alertbridge-secrets` are an inseparable encrypted-backup recovery pair.
-- Production topology: Baota Nginx terminates HTTPS and proxies to `127.0.0.1:18080`; the container port is never directly public.
+- The admin UI is server-rendered and has no external JavaScript, font, or CDN dependency.
+- Production deployment needs only `compose.yaml`, `.env`, and `secrets/admin_password`; it does not require a repository clone or JSON business configuration.
+- Compose defaults to the official GHCR image. An authenticated ACR copy of the same GHCR digest can be selected through `ALERTBRIDGE_IMAGE` for faster pulls from mainland China.
+- Current production topology: `https://notify.tedxiong.com` terminates TLS at Baota Nginx and proxies to the loopback-bound application port `127.0.0.1:18080`. The verified deployment runs v0.2.3 through the Shanghai ACR VPC endpoint.
 
 ## Accepted decisions
 
-- Keep v1 single-process and single-instance; do not add Redis or PostgreSQL without measured need.
-- Keep one canonical inbound event API. Callers adapt payloads; AlertBridge does not maintain product-named parsers.
-- Keep SQLite at WAL + FULL synchronous with one connection.
+- Keep the current runtime single-process and single-instance; do not add Redis, PostgreSQL, or additional workers without measured need.
+- Keep one canonical inbound event API. Callers adapt payloads; AlertBridge does not maintain product-named or heuristic input parsers.
+- Keep SQLite at WAL + `synchronous=FULL` with one connection.
 - Keep the image `scratch`, non-root, read-only, capability-free, loopback-bound, and resource-limited.
-- Publish official `linux/amd64` and `linux/arm64` images only through GitHub Actions and GHCR; Docker Hub is not used.
-- Keep the admin UI server-rendered with no external JavaScript, font, or CDN dependency.
-- Dynamic credentials use AES-256-GCM and atomic immutable runtime snapshots.
-- Business configuration starts empty and is created only through the authenticated management console; there is no legacy JSON bootstrap path.
+- GHCR is the only official release registry. ACR is an optional authenticated deployment mirror copied from the immutable GHCR digest; Docker Hub is not used.
+- Dynamic channel credentials use AES-256-GCM and atomic immutable runtime snapshots.
+- Business configuration starts empty and is created only through the authenticated management console; there is no JSON bootstrap path.
 - Administrator login uses bounded Argon2id parameters and serialized verification; no fixed default password exists.
+- Event timestamps are stored and transmitted as UTC; timezone conversion is presentation-only, with `Asia/Shanghai` as the deployment default.
+
+## Operational boundaries
+
+- `alertbridge-data` and `alertbridge-secrets` are an inseparable encrypted-backup recovery pair. Never delete or restore only one of them.
+- First startup accepts the administrator bootstrap password through the file-backed `secrets/admin_password` Compose Secret and stores only its Argon2id hash.
+- The host Secret directory must remain `0700`. Never move the administrator password into the service environment.
+- An initialized database must fail startup if its encryption master key is missing; never silently regenerate the key.
+- Production TLS terminates at Baota Nginx. Do not expose the application container port publicly.
+- Release tags run tests, static analysis, Docker E2E, and multi-architecture GHCR publishing. The optional ACR job copies the published digest instead of rebuilding it.
+- Production upgrades and rollbacks change only the pinned `ALERTBRIDGE_IMAGE_TAG`, then run `docker compose pull && docker compose up -d`.
+- Do not run `docker compose down -v` against production or a persistent local demo unless data deletion is explicitly requested.
 
 ## Deferred scope
 
-- Acknowledgement/escalation policies, Prometheus metrics, multi-instance storage, and administrator password self-service/reset flow.
+- Multi-event aggregation, acknowledgement, timeout escalation, alert detail pages, Prometheus metrics, multi-instance storage, administrator password self-service/reset, and additional outbound channel adapters.
+- Product-named inbound parsers remain outside scope; source systems or trusted adapters must produce the canonical API payload and signature.
 
 ## Verification commands
 
@@ -37,3 +48,9 @@ go vet ./...
 ./test/release/run.sh
 ./test/e2e/run.sh
 ```
+
+## Resume point
+
+- The current milestone is complete and the project is in maintenance mode.
+- Start a future task by reading `AGENTS.md`, `README.md`, this file, and only the relevant document under `docs/`.
+- There is no required feature backlog for the next session. Prefer bug fixes, operational evidence, or measured user demand over speculative expansion.

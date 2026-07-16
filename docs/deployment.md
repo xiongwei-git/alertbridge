@@ -186,7 +186,7 @@ https://你的域名/admin/
 docker compose ps
 docker compose logs --tail=100 alertbridge
 docker compose logs -f --tail=100 alertbridge
-docker compose up -d --force-recreate
+docker compose up -d
 docker compose down  # 停止并保留两个数据卷
 ```
 
@@ -204,7 +204,7 @@ grep '^ALERTBRIDGE_IMAGE_TAG=' .env
 
 ```sh
 docker compose pull
-docker compose up -d --force-recreate
+docker compose up -d
 docker compose ps
 curl -fsS http://127.0.0.1:18080/readyz
 docker compose logs --tail=100 alertbridge
@@ -287,6 +287,7 @@ curl -fsS http://127.0.0.1:18080/readyz
 | API 返回 401 | 检查 Client ID、服务器时间、Nonce 和原始正文签名 |
 | API 返回 `403 route_forbidden` | 客户端没有允许该 `routing_key` |
 | API 返回 `422 route_unavailable` | 对应路由和严重程度没有绑定已启用渠道 |
+| “活跃故障”测试后一直为 1 | 测试事件误用了 `status=firing`；发送相同客户端、路由和 `dedupe_key` 的 `resolved` 关闭故障，后续测试使用 `status=test` |
 | 飞书返回 `19024` | 后台“安全关键词”必须命中机器人配置的任一关键词 |
 | GHCR 拉取失败 | 使用已发布完整版本；确认 VPS 可访问 `ghcr.io`；中国内地阿里云 ECS 可按第 5 节配置维护者提供的 ACR VPC 镜像 |
 | ACR 返回未授权 | 重新对 `.env` 中镜像地址的 VPC Registry 执行 `docker login`；确认登录名、固定密码和仓库权限 |

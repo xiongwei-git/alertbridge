@@ -58,12 +58,19 @@ components:
         event_id: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' }
         source: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' }
         routing_key: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' }
-        status: { type: string, enum: [firing, resolved, info, test] }
+        status:
+          type: string
+          enum: [firing, resolved, info, test]
+          description: firing opens or refreshes an incident; resolved closes the matching incident; info and test are one-off events.
         severity: { type: string, enum: [critical, warning, info] }
         title: { type: string, minLength: 1, maxLength: 200 }
         message: { type: string, minLength: 1, maxLength: 4000 }
         occurred_at: { type: string, format: date-time }
-        dedupe_key: { type: string, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' }
+        dedupe_key:
+          type: string
+          maxLength: 128
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$'
+          description: Required for firing and resolved. The same client, routing_key, and dedupe_key identify one incident lifecycle.
         labels:
           type: object
           maxProperties: 20

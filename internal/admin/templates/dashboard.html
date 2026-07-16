@@ -1,6 +1,6 @@
 {{define "content"}}
 <section class="metric-grid" aria-label="关键指标">
-  <article class="metric"><span>活跃故障</span><strong class="metric-danger">{{.Stats.ActiveIncidents}}</strong><small>当前 firing 事件</small></article>
+  <article class="metric"><span>活跃故障</span><strong class="metric-danger">{{.Stats.ActiveIncidents}}</strong><small>尚未收到 resolved 的告警</small></article>
   <article class="metric"><span>今日事件</span><strong>{{.Stats.EventsToday}}</strong><small>已持久化接收</small></article>
   <article class="metric"><span>等待投递</span><strong>{{.Stats.Pending}}</strong><small>pending 队列</small></article>
   <article class="metric"><span>重试中</span><strong class="metric-warning">{{.Stats.Retrying}}</strong><small>等待下次尝试</small></article>
