@@ -103,6 +103,26 @@ Compose 默认启用：回环端口、非 root UID 10001、只读根文件系统
 
 服务内部、SQLite 和 API 时间语义保持 UTC。管理后台与通知内容在输出时转换为 `.env` 中的 `ALERTBRIDGE_DISPLAY_TIMEZONE`，默认是 `Asia/Shanghai`。该值必须是 IANA 时区名，例如 `UTC`、`Asia/Shanghai` 或 `America/Los_Angeles`；非法值会阻止服务启动，避免静默显示错误时间。
 
+### 中国内地服务器使用 ACR
+
+默认镜像源是 GHCR。若维护者提供了同版本 ACR 镜像，中国内地的阿里云 ECS 可以在 `.env` 增加完整的 VPC 镜像路径：
+
+```sh
+printf '%s\n' \
+  'ALERTBRIDGE_IMAGE=<ACR VPC 域名>/<命名空间>/<仓库名>' >> .env
+```
+
+首次使用私有 ACR 仓库时，登录一次对应的 VPC Registry。命令会交互式询问密码，不要把密码直接写在命令参数或 `.env` 中：
+
+```sh
+docker login <ACR VPC 域名> -u '<Registry 登录名>'
+docker compose config
+docker compose pull
+docker compose up -d
+```
+
+`ALERTBRIDGE_IMAGE` 只改变镜像仓库，升级与回滚仍然只修改 `ALERTBRIDGE_IMAGE_TAG`。ACR 是国内部署镜像，GHCR 仍是官方版本和发布来源。
+
 ## 6. 宝塔 HTTPS 反向代理
 
 在宝塔“网站”中添加正式域名、申请证书并强制 HTTPS，反向代理目标为：
@@ -268,7 +288,8 @@ curl -fsS http://127.0.0.1:18080/readyz
 | API 返回 `403 route_forbidden` | 客户端没有允许该 `routing_key` |
 | API 返回 `422 route_unavailable` | 对应路由和严重程度没有绑定已启用渠道 |
 | 飞书返回 `19024` | 后台“安全关键词”必须命中机器人配置的任一关键词 |
-| GHCR 拉取失败 | 使用已发布完整版本；确认 VPS 可访问 `ghcr.io`；公开镜像不需要登录 |
+| GHCR 拉取失败 | 使用已发布完整版本；确认 VPS 可访问 `ghcr.io`；中国内地阿里云 ECS 可按第 5 节配置维护者提供的 ACR VPC 镜像 |
+| ACR 返回未授权 | 重新对 `.env` 中镜像地址的 VPC Registry 执行 `docker login`；确认登录名、固定密码和仓库权限 |
 | 18080 被占用 | 修改 `.env` 的 `ALERTBRIDGE_PORT` 后重新创建容器 |
 | 通知时间比北京时间少 8 小时 | 使用 v0.2.2 或更高版本；确认 `ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai`，不要修改服务器系统时钟 |
 

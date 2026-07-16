@@ -70,7 +70,7 @@ docker compose ps
 curl -fsS http://127.0.0.1:18080/readyz
 ```
 
-镜像直接来自 `ghcr.io/xiongwei-git/alertbridge`。Compose 把宿主机密码文件只读挂载为 `/run/secrets/admin_password`，不会把密码放进容器环境变量或写入只读根文件系统。首次启动时：
+镜像默认来自官方地址 `ghcr.io/xiongwei-git/alertbridge`。中国内地服务器可通过 `ALERTBRIDGE_IMAGE` 改用维护者提供的同版本国内镜像；版本号仍由 `ALERTBRIDGE_IMAGE_TAG` 控制。Compose 把宿主机密码文件只读挂载为 `/run/secrets/admin_password`，不会把密码放进容器环境变量或写入只读根文件系统。首次启动时：
 
 - 用户名和 Argon2id 密码哈希写入 SQLite；
 - 32 字节动态配置主密钥自动生成到独立的 `alertbridge-secrets` 卷；

@@ -2,7 +2,7 @@ name: alertbridge
 
 services:
   alertbridge:
-    image: ghcr.io/xiongwei-git/alertbridge:${ALERTBRIDGE_IMAGE_TAG:-latest}
+    image: ${ALERTBRIDGE_IMAGE:-ghcr.io/xiongwei-git/alertbridge}:${ALERTBRIDGE_IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "127.0.0.1:${ALERTBRIDGE_PORT:-18080}:8080"
