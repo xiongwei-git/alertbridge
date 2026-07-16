@@ -35,7 +35,7 @@ secrets/admin_password
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.2.2/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.2.3/compose.yaml
 ```
 
 创建仅当前账户可进入的 Secret 目录和部署参数。管理员密码至少 16 字节，不要使用项目内置的通用密码：
@@ -45,7 +45,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.2.2' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.2.3' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
