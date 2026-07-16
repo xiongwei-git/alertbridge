@@ -46,7 +46,7 @@ func TestAdminAuthenticationCSRFAndClientCreation(t *testing.T) {
 	cookie := cookies[0]
 
 	dashboard := serve(handler, http.MethodGet, "/admin/", nil, cookie)
-	if dashboard.Code != http.StatusOK || !strings.Contains(dashboard.Body.String(), "运行概览") || !strings.Contains(dashboard.Body.String(), "alertbridge-mark.svg?v=7") {
+	if dashboard.Code != http.StatusOK || !strings.Contains(dashboard.Body.String(), "运行概览") || !strings.Contains(dashboard.Body.String(), "尚未收到 resolved 的告警") || !strings.Contains(dashboard.Body.String(), "alertbridge-mark.svg?v=7") {
 		t.Fatalf("dashboard response = %d, %s", dashboard.Code, dashboard.Body.String())
 	}
 	csrf := extractCSRF(t, dashboard.Body.String())

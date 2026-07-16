@@ -34,13 +34,24 @@
 
 - `event_id`：同一客户端内唯一，1–128 字节；相同值用于幂等重试。
 - `source`、`routing_key`：1–64 字节标识符。
-- `status`：`firing`、`resolved`、`info` 或 `test`。
+- `status`：决定事件是否进入故障生命周期，语义见下表。
 - `severity`：`critical`、`warning` 或 `info`。
 - `title`：1–200 个字符；`message`：1–4000 个字符。
 - `occurred_at`：RFC 3339；不能超过服务当前时间 5 分钟。
 - `dedupe_key`：`firing` 和 `resolved` 必填，最多 128 字节。
 - `labels`：最多 20 项，键最多 64 字节，值最多 256 个字符。
 - `url`：可选，只接受不带用户信息的绝对 HTTP/HTTPS URL。
+
+状态语义：
+
+| 值 | 含义 |
+| --- | --- |
+| `firing` | 创建或刷新由 `client_id + routing_key + dedupe_key` 标识的活跃故障 |
+| `resolved` | 关闭同一活跃故障；通知会根据已记录的开始时间显示持续时间 |
+| `info` | 普通一次性通知，不创建活跃故障 |
+| `test` | 接入或渠道测试，不创建活跃故障 |
+
+`firing` 与 `resolved` 必须使用相同的客户端、`routing_key` 和 `dedupe_key` 才能完成一次故障闭环。测试请求应使用 `test`，不要用 `firing` 代替测试状态。
 
 ### 响应
 

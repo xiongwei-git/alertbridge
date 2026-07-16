@@ -10,3 +10,5 @@
 *.db
 *.db-shm
 *.db-wal
+
+PROJECT_BRIEF.md

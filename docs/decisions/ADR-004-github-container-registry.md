@@ -22,7 +22,7 @@ The source repository already lives on GitHub. Maintaining an additional Docker 
 - Published tags include the full version, major/minor, non-zero major and `latest`. The floating major tag is suppressed throughout `v0.x`, while production installations always pin the full version through `ALERTBRIDGE_IMAGE_TAG`.
 - GitHub's repository-scoped `GITHUB_TOKEN` publishes the image. Only the publishing job receives `packages: write`, `attestations: write` and `id-token: write`; other jobs remain read-only.
 - Third-party Actions are pinned to immutable commit SHAs. Published images include OCI metadata, SBOM, BuildKit provenance and a GitHub artifact attestation.
-- `compose.yaml` consumes the official image. Local source builds remain available through the explicit `compose.build.yaml` overlay.
+- `compose.yaml` defaults to the official image and accepts the non-authoritative ACR mirror override defined by ADR-007. Local source builds remain available through the explicit `compose.build.yaml` overlay.
 
 ## Alternatives Considered
 
