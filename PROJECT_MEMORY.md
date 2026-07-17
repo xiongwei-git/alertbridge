@@ -2,21 +2,22 @@
 
 ## Current state (2026-07-17)
 
-- AlertBridge v0.3.0 is the lightweight-ingress production release. It adds the constrained notification API without changing the deployed HMAC contract.
+- AlertBridge v0.3.1 is the Baota compatibility release for the lightweight notification API. It keeps the constrained Bearer contract and returns `200 OK` after durable enqueue while the full HMAC event API remains `202 Accepted`.
 - Build toolchain: Go 1.26.5 with module language level 1.25.0. Runtime uses pure-Go SQLite, one HTTP process, one SQLite connection, and one persistent delivery worker.
-- Public APIs in current source: `POST /api/v1/notifications` for constrained one-off Bearer notifications and `POST /api/v1/events` for full HMAC event lifecycles; health: `/healthz` and `/readyz`; management console: `/admin/`.
+- Public APIs in current source: `POST /api/v1/notifications` for constrained one-off Bearer notifications (`200 OK` after durable enqueue) and `POST /api/v1/events` for full HMAC event lifecycles (`202 Accepted`); health: `/healthz` and `/readyz`; management console: `/admin/`.
 - Implemented: hash-only lightweight ingress tokens bound to a server-side source, route, severity, `info` status, and independent 1–60/minute limit; per-client HMAC, replay protection, route authorization, rate limiting, idempotency, incident lifecycle through matching `firing` and `resolved` events, silences, credential rotation, persistent delivery retries, manual retry, and dead letters.
 - Channel adapters: Feishu text/cards with optional security-keyword injection, Telegram Bot, ntfy, and TLS/STARTTLS SMTP.
 - The admin UI is server-rendered and has no external JavaScript, font, or CDN dependency.
 - Production deployment needs only `compose.yaml`, `.env`, and `secrets/admin_password`; it does not require a repository clone or JSON business configuration.
 - Compose defaults to the official GHCR image. An authenticated ACR copy of the same GHCR digest can be selected through `ALERTBRIDGE_IMAGE` for faster pulls from mainland China.
-- Current production topology: `https://notify.tedxiong.com` terminates TLS at Baota Nginx and proxies to the loopback-bound application port `127.0.0.1:18080`. The verified deployment runs v0.2.3 through the Shanghai ACR VPC endpoint.
+- Current production topology: `https://notify.tedxiong.com` terminates TLS at Baota Nginx and proxies to the loopback-bound application port `127.0.0.1:18080`. Deployment uses a pinned version through the Shanghai ACR VPC endpoint; verify the live tag before operational changes.
 
 ## Accepted decisions
 
 - Keep the current runtime single-process and single-instance; do not add Redis, PostgreSQL, or additional workers without measured need.
 - Keep two explicit inbound contracts: constrained `POST /api/v1/notifications` for one-off notifications and canonical `POST /api/v1/events` for full event lifecycles. AlertBridge does not maintain product-named or heuristic input parsers.
 - Lightweight tokens stay header-only, high-entropy, hash-only at rest, independently rate-limited, server-bound to route and severity, and fixed to `info`; see ADR-008.
+- The lightweight notification endpoint returns `200 OK` for Baota webhook compatibility while preserving `outcome=queued` asynchronous semantics; the full event endpoint remains `202 Accepted`; see ADR-009.
 - Keep SQLite at WAL + `synchronous=FULL` with one connection.
 - Keep the image `scratch`, non-root, read-only, capability-free, loopback-bound, and resource-limited.
 - GHCR is the only official release registry. ACR is an optional authenticated deployment mirror copied from the immutable GHCR digest; Docker Hub is not used.
@@ -52,6 +53,6 @@ go vet ./...
 
 ## Resume point
 
-- The lightweight ingress milestone is released as v0.3.0. The production server remains pinned to v0.2.3 until the user explicitly authorizes an upgrade.
+- The lightweight ingress milestone is released, with Baota HTTP 200 compatibility captured in v0.3.1.
 - Start a future task by reading `AGENTS.md`, `README.md`, this file, and only the relevant document under `docs/`.
 - There is no required feature backlog for the next session. Prefer bug fixes, operational evidence, or measured user demand over speculative expansion.

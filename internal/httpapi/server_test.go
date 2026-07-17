@@ -77,7 +77,7 @@ func TestEventEndpointBoundaryErrors(t *testing.T) {
 	})
 }
 
-func TestSimpleNotificationEndpointAcceptsBoundBearerToken(t *testing.T) {
+func TestSimpleNotificationEndpointReturnsOKForBaotaCompatibility(t *testing.T) {
 	database, err := store.Open(filepath.Join(t.TempDir(), "alertbridge.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestSimpleNotificationEndpointAcceptsBoundBearerToken(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer "+plain)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusAccepted {
+	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
 	}
 	var accepted acceptedResponse
@@ -191,7 +191,7 @@ func TestSimpleNotificationEndpointRejectsUnauthorizedInvalidAndLimitedRequests(
 		t.Fatalf("invalid category = %d body=%s", invalidCategory.Code, invalidCategory.Body.String())
 	}
 	valid := call("Bearer "+plain, `{"title":"x","message":"y"}`)
-	if valid.Code != http.StatusAccepted {
+	if valid.Code != http.StatusOK {
 		t.Fatalf("valid = %d body=%s", valid.Code, valid.Body.String())
 	}
 	limited := call("Bearer "+plain, `{"title":"x","message":"y"}`)

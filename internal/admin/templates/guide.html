@@ -1,11 +1,11 @@
 {{define "content"}}
 <section class="panel guide-hero">
   <div><p class="eyebrow">INTEGRATION GUIDE</p><h2>外部服务如何调用</h2><p>页面会自动识别当前服务地址并代入示例。简单 Webhook 使用轻量令牌；需要防重放、幂等和故障恢复时使用 HMAC 客户端。</p></div>
-  <ol class="guide-steps" aria-label="接入步骤"><li><span>1</span><strong>选择方式</strong><small>简单通知使用令牌，完整事件使用 HMAC</small></li><li><span>2</span><strong>保存凭据</strong><small>令牌和密钥都只显示一次</small></li><li><span>3</span><strong>确认投递</strong><small>收到 202 后到投递记录核对结果</small></li></ol>
+  <ol class="guide-steps" aria-label="接入步骤"><li><span>1</span><strong>选择方式</strong><small>简单通知使用令牌，完整事件使用 HMAC</small></li><li><span>2</span><strong>保存凭据</strong><small>令牌和密钥都只显示一次</small></li><li><span>3</span><strong>确认投递</strong><small>接口接收成功后到投递记录核对结果</small></li></ol>
 </section>
 
 <section class="panel guide-card" id="simple-api">
-  <p class="eyebrow">SIMPLE NOTIFICATION API</p><h2>轻量通知接口</h2><p>适合宝塔自定义消息通道等只需要发送标题和正文的工具。路由、级别和来源由轻量令牌固定，正文不能覆盖。</p><code class="endpoint">POST {{.GuideBaseURL}}/api/v1/notifications</code>
+  <p class="eyebrow">SIMPLE NOTIFICATION API</p><h2>轻量通知接口</h2><p>适合宝塔自定义消息通道等只需要发送标题和正文的工具。路由、级别和来源由轻量令牌固定，正文不能覆盖；持久化入队后返回 <code>200 OK</code>。</p><code class="endpoint">POST {{.GuideBaseURL}}/api/v1/notifications</code>
   <pre class="code-block" tabindex="0"><code>curl --fail-with-body --silent --show-error \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer 粘贴轻量接入令牌' \

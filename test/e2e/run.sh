@@ -189,7 +189,7 @@ simple_status=$(curl -sS -o "$tmp_dir/simple-response.json" -w '%{http_code}' \
   -H "Authorization: Bearer $ingress_token" \
   --data-binary '{"title":"Baota E2E alert","message":"Lightweight token delivery test","category":"baota"}' \
   "http://127.0.0.1:$port/api/v1/notifications")
-[ "$simple_status" = 202 ] || { cat "$tmp_dir/simple-response.json"; exit 1; }
+[ "$simple_status" = 200 ] || { cat "$tmp_dir/simple-response.json"; exit 1; }
 grep -q '"event_id":"simple-' "$tmp_dir/simple-response.json"
 attempt=0
 until curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":2'; do
@@ -232,7 +232,7 @@ simple_status=$(curl -sS -o "$tmp_dir/simple-response-after-restart.json" -w '%{
   -H "Authorization: Bearer $ingress_token" \
   --data-binary '{"title":"Baota E2E restart","message":"Lightweight token survived restart"}' \
   "http://127.0.0.1:$port/api/v1/notifications")
-[ "$simple_status" = 202 ] || { cat "$tmp_dir/simple-response-after-restart.json"; exit 1; }
+[ "$simple_status" = 200 ] || { cat "$tmp_dir/simple-response-after-restart.json"; exit 1; }
 attempt=0
 until curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":3'; do
   attempt=$((attempt + 1))

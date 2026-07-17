@@ -42,7 +42,7 @@ secrets/admin_password
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.3.0/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.3.1/compose.yaml
 ```
 
 创建仅当前账户可进入的 Secret 目录和部署参数。管理员密码至少 16 字节，不要使用项目内置的通用密码：
@@ -52,7 +52,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.3.0' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.3.1' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -115,7 +115,7 @@ curl --fail-with-body --silent --show-error \
   'https://你的域名/api/v1/notifications'
 ```
 
-服务会生成来源、事件 ID 和时间，状态固定为 `info`。因此该入口不能创建或关闭活跃故障；需要幂等、防重放、动态路由或 `firing/resolved` 时使用 HMAC 完整事件接口。令牌只能放在 `Authorization` 请求头，不能放进 URL。
+服务会生成来源、事件 ID 和时间，状态固定为 `info`。轻量入口在通知持久化入队后返回 `200 OK`，兼容只把 HTTP 200 视为成功的宝塔自定义消息通道；响应中的 `outcome=queued` 表示等待异步投递，最终结果请在后台“投递记录”确认。因此该入口不能创建或关闭活跃故障；需要幂等、防重放、动态路由或 `firing/resolved` 时使用 HMAC 完整事件接口。令牌只能放在 `Authorization` 请求头，不能放进 URL。
 
 ## 完整事件签名
 

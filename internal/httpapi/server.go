@@ -169,7 +169,7 @@ func (s *Server) notifications(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "route_unavailable", "token route has no enabled channel", id)
 		return
 	}
-	s.persistEvent(w, r, id, "@bearer:"+token.ID, event, body, targets, now)
+	s.persistEvent(w, r, id, "@bearer:"+token.ID, event, body, targets, now, http.StatusOK)
 }
 
 func (s *Server) legacyHookGone(w http.ResponseWriter, r *http.Request) {
@@ -264,10 +264,10 @@ func (s *Server) acceptEvent(w http.ResponseWriter, r *http.Request, id string, 
 		}
 		return
 	}
-	s.persistEvent(w, r, id, client.ID, event, body, targets, now)
+	s.persistEvent(w, r, id, client.ID, event, body, targets, now, http.StatusAccepted)
 }
 
-func (s *Server) persistEvent(w http.ResponseWriter, r *http.Request, id, clientID string, event domain.Event, body []byte, targets []string, now time.Time) {
+func (s *Server) persistEvent(w http.ResponseWriter, r *http.Request, id, clientID string, event domain.Event, body []byte, targets []string, now time.Time, successStatus int) {
 	suppressReason := ""
 	if s.cfg.IsSilenced(event.RoutingKey, string(event.Severity), now) {
 		suppressReason = "silence"
@@ -279,7 +279,7 @@ func (s *Server) persistEvent(w http.ResponseWriter, r *http.Request, id, client
 		return
 	}
 	s.cfg.Logger.Info("event accepted", "request_id", id, "client_id", clientID, "event_id", event.EventID, "routing_key", event.RoutingKey, "outcome", result.Outcome, "deliveries", result.Deliveries)
-	writeJSON(w, http.StatusAccepted, acceptedResponse{RequestID: id, EventRecordID: result.EventID, EventID: event.EventID, Outcome: result.Outcome, Reason: result.Reason, Deliveries: result.Deliveries})
+	writeJSON(w, successStatus, acceptedResponse{RequestID: id, EventRecordID: result.EventID, EventID: event.EventID, Outcome: result.Outcome, Reason: result.Reason, Deliveries: result.Deliveries})
 }
 
 func (s *Server) staticTargets(route, severity string) []string {
