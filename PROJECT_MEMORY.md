@@ -2,7 +2,7 @@
 
 ## Current state (2026-07-17)
 
-- AlertBridge v0.2.3 remains the latest published production release. Current source adds the next-release constrained lightweight ingress without changing the deployed HMAC contract.
+- AlertBridge v0.3.0 is the lightweight-ingress production release. It adds the constrained notification API without changing the deployed HMAC contract.
 - Build toolchain: Go 1.26.5 with module language level 1.25.0. Runtime uses pure-Go SQLite, one HTTP process, one SQLite connection, and one persistent delivery worker.
 - Public APIs in current source: `POST /api/v1/notifications` for constrained one-off Bearer notifications and `POST /api/v1/events` for full HMAC event lifecycles; health: `/healthz` and `/readyz`; management console: `/admin/`.
 - Implemented: hash-only lightweight ingress tokens bound to a server-side source, route, severity, `info` status, and independent 1–60/minute limit; per-client HMAC, replay protection, route authorization, rate limiting, idempotency, incident lifecycle through matching `firing` and `resolved` events, silences, credential rotation, persistent delivery retries, manual retry, and dead letters.
@@ -52,6 +52,6 @@ go vet ./...
 
 ## Resume point
 
-- The lightweight ingress implementation is the current milestone; keep v0.2.3 identified as the production release until a new version is explicitly tagged and published.
+- The lightweight ingress milestone is released as v0.3.0. The production server remains pinned to v0.2.3 until the user explicitly authorizes an upgrade.
 - Start a future task by reading `AGENTS.md`, `README.md`, this file, and only the relevant document under `docs/`.
 - There is no required feature backlog for the next session. Prefer bug fixes, operational evidence, or measured user demand over speculative expansion.

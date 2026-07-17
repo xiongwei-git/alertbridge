@@ -34,7 +34,7 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.2.3/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.3.0/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
@@ -49,7 +49,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.2.3' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.3.0' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -170,8 +170,6 @@ https://你的域名/admin/
 所有业务配置都写入 SQLite。需要再次使用的敏感字段由独立主密钥进行 AES-256-GCM 加密；轻量令牌只保存不可恢复的摘要。修改成功后立即切换运行快照，无需重启。
 
 ### 7.1 宝塔自定义消息通道接入
-
-本节要求镜像包含 `POST /api/v1/notifications`；最新生产 Release v0.2.3 尚不包含该接口，按版本部署时请等待后续 Release。
 
 宝塔只能配置固定 URL、请求头和带变量的 JSON 正文时，不需要额外部署签名适配器：
 
