@@ -34,7 +34,7 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.3.0/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.3.1/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
@@ -49,7 +49,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.3.0' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.3.1' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -204,7 +204,7 @@ URL：https://你的域名/api/v1/notifications
 }
 ```
 
-宝塔变量只填充标题、正文和可选分类。来源、路由、级别由令牌在服务端固定，状态始终是 `info`，因此不会产生无法关闭的活跃故障。令牌不要拼进 URL；泄露时在后台停用或轮换即可。需要故障发生/恢复闭环时仍使用 HMAC 完整事件接口。
+宝塔变量只填充标题、正文和可选分类。来源、路由、级别由令牌在服务端固定，状态始终是 `info`，因此不会产生无法关闭的活跃故障。AlertBridge 持久化入队后为该轻量接口返回 `200 OK`，兼容宝塔只接受 HTTP 200 的测试逻辑；返回体中的 `outcome=queued` 仍表示异步投递，最终结果在后台“投递记录”确认。令牌不要拼进 URL；泄露时在后台停用或轮换即可。需要故障发生/恢复闭环时仍使用 HMAC 完整事件接口。
 
 上述字段来自[宝塔自定义消息通道指南](https://www.bt.cn/bbs/thread-143326-1-1.html)中的 `$title`、`$msg`、`$type`。原帖界面以 Linux 面板 9.5.0 为例，其他版本的菜单名称可能不同，但请求 URL、请求头和自定义正文的配置原则相同。
 
@@ -214,7 +214,7 @@ URL：https://你的域名/api/v1/notifications
 2. 管理员可以登录，Cookie 通过 HTTPS 正常保存；
 3. 每个渠道的后台测试消息到达；
 4. 每个 HMAC 客户端至少允许一个已配置路由，每个轻量令牌固定一条已配置规则；
-5. 轻量测试通知和 HMAC 签名测试事件都得到 `202 Accepted`；
+5. 轻量测试通知得到 `200 OK`，HMAC 签名测试事件得到 `202 Accepted`；
 6. 原样重放同一 HMAC Nonce 得到 `401`；
 7. 新 Nonce 配相同 `event_id` 得到 `outcome=duplicate`，渠道不重复发送；
 8. 日志中没有 Webhook、Token、密码、签名或完整请求正文。

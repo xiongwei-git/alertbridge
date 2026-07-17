@@ -71,7 +71,7 @@ func TestAdminAuthenticationCSRFAndClientCreation(t *testing.T) {
 		t.Fatalf("route selector/help response = %d, %s", routesPage.Code, routesPage.Body.String())
 	}
 	guidePage := serve(handler, http.MethodGet, "/admin/guide", nil, cookie)
-	if guidePage.Code != http.StatusOK || !strings.Contains(guidePage.Body.String(), "外部服务如何调用") || !strings.Contains(guidePage.Body.String(), "X-Notify-Signature") || !strings.Contains(guidePage.Body.String(), "openssl dgst") || !strings.Contains(guidePage.Body.String(), `POST http://example.com/api/v1/events`) || !strings.Contains(guidePage.Body.String(), `BASE_URL='http://example.com'`) || !strings.Contains(guidePage.Body.String(), `POST http://example.com/api/v1/notifications`) || !strings.Contains(guidePage.Body.String(), `"message": "$msg"`) {
+	if guidePage.Code != http.StatusOK || !strings.Contains(guidePage.Body.String(), "外部服务如何调用") || !strings.Contains(guidePage.Body.String(), "X-Notify-Signature") || !strings.Contains(guidePage.Body.String(), "openssl dgst") || !strings.Contains(guidePage.Body.String(), `POST http://example.com/api/v1/events`) || !strings.Contains(guidePage.Body.String(), `BASE_URL='http://example.com'`) || !strings.Contains(guidePage.Body.String(), `POST http://example.com/api/v1/notifications`) || !strings.Contains(guidePage.Body.String(), `"message": "$msg"`) || !strings.Contains(guidePage.Body.String(), "200 OK") {
 		t.Fatalf("integration guide response = %d, %s", guidePage.Code, guidePage.Body.String())
 	}
 	for _, removed := range []string{"/hooks/", "Gatus", "Alertmanager", "Grafana", "Uptime Kuma"} {
