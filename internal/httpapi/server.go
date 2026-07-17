@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/xiongwei-git/alertbridge/internal/auth"
@@ -20,6 +21,7 @@ import (
 type Config struct {
 	Database        *store.Store
 	Verifier        auth.Verifier
+	BearerVerifier  auth.BearerVerifier
 	Admin           http.Handler
 	Routes          map[string]map[string][]string
 	EnabledChannels map[string]bool
@@ -28,6 +30,7 @@ type Config struct {
 	NonceRetention  time.Duration
 	DedupeWindow    time.Duration
 	BodyLimitBytes  int64
+	SimpleBodyLimit int64
 	Now             func() time.Time
 	Logger          *slog.Logger
 }
@@ -51,6 +54,13 @@ type acceptedResponse struct {
 	Deliveries    int           `json:"deliveries"`
 }
 
+type simpleNotification struct {
+	Title    string `json:"title"`
+	Message  string `json:"message"`
+	Category string `json:"category,omitempty"`
+	URL      string `json:"url,omitempty"`
+}
+
 func New(cfg Config) http.Handler {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -60,6 +70,9 @@ func New(cfg Config) http.Handler {
 	}
 	if cfg.BodyLimitBytes <= 0 {
 		cfg.BodyLimitBytes = 32 * 1024
+	}
+	if cfg.SimpleBodyLimit <= 0 {
+		cfg.SimpleBodyLimit = 8 * 1024
 	}
 	server := &Server{cfg: cfg}
 	if server.cfg.ResolveTargets == nil {
@@ -72,12 +85,91 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("/healthz", server.health)
 	mux.HandleFunc("/readyz", server.ready)
 	mux.HandleFunc("/api/v1/events", server.events)
+	mux.HandleFunc("/api/v1/notifications", server.notifications)
 	mux.HandleFunc("/hooks/", server.legacyHookGone)
 	if cfg.Admin != nil {
 		mux.Handle("/admin", cfg.Admin)
 		mux.Handle("/admin/", cfg.Admin)
 	}
 	return server.securityHeaders(mux)
+}
+
+func (s *Server) notifications(w http.ResponseWriter, r *http.Request) {
+	id := requestID(r)
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, r, http.MethodPost)
+		return
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json", id)
+		return
+	}
+	token, err := s.cfg.BearerVerifier.Verify(r.Header.Get("Authorization"))
+	if err != nil {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="alertbridge"`)
+		writeError(w, http.StatusUnauthorized, "authentication_failed", "request authentication failed", id)
+		return
+	}
+	now := s.cfg.Now().UTC()
+	if err := s.cfg.Database.RecordRateLimit(r.Context(), "bearer:"+token.PublicID, now, token.RateLimitPerMinute); err != nil {
+		if errors.Is(err, store.ErrRateLimit) {
+			w.Header().Set("Retry-After", "60")
+			writeError(w, http.StatusTooManyRequests, "rate_limited", "token request rate exceeded", id)
+			return
+		}
+		s.cfg.Logger.Error("record simple token rate", "request_id", id, "token_id", token.ID, "error", err)
+		writeError(w, http.StatusServiceUnavailable, "storage_unavailable", "service is temporarily unavailable", id)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.SimpleBodyLimit)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "request body exceeds the configured limit", id)
+		return
+	}
+	var input simpleNotification
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body is not a valid notification", id)
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must contain exactly one JSON object", id)
+		return
+	}
+	input.Category = strings.TrimSpace(input.Category)
+	if len([]rune(input.Category)) > 64 || strings.ContainsAny(input.Category, "\r\n") {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_notification", "category must not exceed 64 characters or contain line breaks", id)
+		return
+	}
+	eventID, err := randomHex(16)
+	if err != nil {
+		s.cfg.Logger.Error("generate simple event id", "request_id", id, "token_id", token.ID, "error", err)
+		writeError(w, http.StatusServiceUnavailable, "service_unavailable", "service is temporarily unavailable", id)
+		return
+	}
+	labels := map[string]string{}
+	if input.Category != "" {
+		labels["category"] = input.Category
+	}
+	event := domain.Event{
+		EventID: "simple-" + eventID, Source: token.ID, RoutingKey: token.RoutingKey,
+		Status: domain.StatusInfo, Severity: domain.Severity(token.Severity), Title: input.Title,
+		Message: input.Message, OccurredAt: now, Labels: labels, URL: input.URL,
+	}
+	if err := event.Validate(now); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_notification", err.Error(), id)
+		return
+	}
+	targets := s.cfg.ResolveTargets(event.RoutingKey, string(event.Severity))
+	if len(targets) == 0 {
+		writeError(w, http.StatusUnprocessableEntity, "route_unavailable", "token route has no enabled channel", id)
+		return
+	}
+	s.persistEvent(w, r, id, "@bearer:"+token.ID, event, body, targets, now)
 }
 
 func (s *Server) legacyHookGone(w http.ResponseWriter, r *http.Request) {
@@ -172,17 +264,21 @@ func (s *Server) acceptEvent(w http.ResponseWriter, r *http.Request, id string, 
 		}
 		return
 	}
+	s.persistEvent(w, r, id, client.ID, event, body, targets, now)
+}
+
+func (s *Server) persistEvent(w http.ResponseWriter, r *http.Request, id, clientID string, event domain.Event, body []byte, targets []string, now time.Time) {
 	suppressReason := ""
 	if s.cfg.IsSilenced(event.RoutingKey, string(event.Severity), now) {
 		suppressReason = "silence"
 	}
-	result, err := s.cfg.Database.AcceptEvent(r.Context(), store.AcceptParams{ClientID: client.ID, Event: event, Targets: targets, Now: now, DedupeWindow: s.cfg.DedupeWindow, SuppressReason: suppressReason, RawPayload: body})
+	result, err := s.cfg.Database.AcceptEvent(r.Context(), store.AcceptParams{ClientID: clientID, Event: event, Targets: targets, Now: now, DedupeWindow: s.cfg.DedupeWindow, SuppressReason: suppressReason, RawPayload: body})
 	if err != nil {
-		s.cfg.Logger.Error("accept event", "request_id", id, "client_id", client.ID, "event_id", event.EventID, "error", err)
+		s.cfg.Logger.Error("accept event", "request_id", id, "client_id", clientID, "event_id", event.EventID, "error", err)
 		writeError(w, http.StatusServiceUnavailable, "storage_unavailable", "service is temporarily unavailable", id)
 		return
 	}
-	s.cfg.Logger.Info("event accepted", "request_id", id, "client_id", client.ID, "event_id", event.EventID, "routing_key", event.RoutingKey, "outcome", result.Outcome, "deliveries", result.Deliveries)
+	s.cfg.Logger.Info("event accepted", "request_id", id, "client_id", clientID, "event_id", event.EventID, "routing_key", event.RoutingKey, "outcome", result.Outcome, "deliveries", result.Deliveries)
 	writeJSON(w, http.StatusAccepted, acceptedResponse{RequestID: id, EventRecordID: result.EventID, EventID: event.EventID, Outcome: result.Outcome, Reason: result.Reason, Deliveries: result.Deliveries})
 }
 

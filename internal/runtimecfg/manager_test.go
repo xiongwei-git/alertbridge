@@ -3,12 +3,15 @@ package runtimecfg
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/xiongwei-git/alertbridge/internal/auth"
 	"github.com/xiongwei-git/alertbridge/internal/domain"
 	"github.com/xiongwei-git/alertbridge/internal/securestore"
 	"github.com/xiongwei-git/alertbridge/internal/store"
@@ -30,7 +33,7 @@ func TestManagerInitializesEmptyAndReloadsDynamicConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(manager.Clients()) != 0 || len(manager.Channels()) != 0 || len(manager.Routes()) != 0 {
+	if len(manager.Clients()) != 0 || len(manager.IngressTokens()) != 0 || len(manager.Channels()) != 0 || len(manager.Routes()) != 0 {
 		t.Fatal("new manager must start without business configuration")
 	}
 	keyword := "AlertBridge"
@@ -83,6 +86,26 @@ func TestManagerInitializesEmptyAndReloadsDynamicConfiguration(t *testing.T) {
 	}
 	if _, ok := manager.LookupClient("grafana"); !ok {
 		t.Fatal("created client not available after reload")
+	}
+
+	bearer, err := manager.CreateIngressToken(context.Background(), "baota-prod", true, "infra", "critical", 10)
+	if err != nil || !strings.HasPrefix(bearer, "abt_") {
+		t.Fatalf("CreateIngressToken() = %q, %v", bearer, err)
+	}
+	verified, err := (auth.BearerVerifier{Lookup: manager.LookupIngressToken}).Verify("Bearer " + bearer)
+	if err != nil || verified.ID != "baota-prod" || verified.Severity != "critical" {
+		t.Fatalf("verified ingress token = %+v, %v", verified, err)
+	}
+	tokenRecord, err := database.GetIngressToken(context.Background(), "baota-prod")
+	if err != nil || len(tokenRecord.TokenHash) != 32 || bytes.Contains(tokenRecord.TokenHash, []byte(bearer)) {
+		t.Fatalf("stored ingress token = %+v, %v", tokenRecord, err)
+	}
+	rotated, err := manager.RotateIngressToken(context.Background(), "baota-prod")
+	if err != nil || rotated == bearer {
+		t.Fatalf("RotateIngressToken() = %q, %v", rotated, err)
+	}
+	if _, err := (auth.BearerVerifier{Lookup: manager.LookupIngressToken}).Verify("Bearer " + bearer); !errors.Is(err, auth.ErrInvalidBearer) {
+		t.Fatalf("old bearer error = %v, want invalid", err)
 	}
 }
 

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +75,129 @@ func TestEventEndpointBoundaryErrors(t *testing.T) {
 			t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
 		}
 	})
+}
+
+func TestSimpleNotificationEndpointAcceptsBoundBearerToken(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "alertbridge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	plain, publicID, secretHash, err := auth.GenerateBearerToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := auth.IngressToken{
+		ID: "baota-prod", PublicID: publicID, SecretHash: secretHash, Enabled: true,
+		RoutingKey: "infrastructure", Severity: "warning", RateLimitPerMinute: 2,
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := New(Config{
+		Database: database,
+		BearerVerifier: auth.BearerVerifier{Lookup: func(id string) (auth.IngressToken, bool) {
+			return token, id == publicID
+		}},
+		Routes:          map[string]map[string][]string{"infrastructure": {"warning": {"feishu.ops"}}},
+		EnabledChannels: map[string]bool{"feishu.ops": true},
+		DedupeWindow:    30 * time.Minute,
+		Now:             func() time.Time { return now },
+		Logger:          logger,
+	})
+
+	body := []byte(`{"title":"宝塔磁盘告警","message":"根分区使用率超过 90%","category":"disk"}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/notifications", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+plain)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
+	}
+	var accepted acceptedResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &accepted); err != nil {
+		t.Fatal(err)
+	}
+	delivery, err := database.ClaimDelivery(context.Background(), now, time.Minute)
+	if err != nil || delivery == nil {
+		t.Fatalf("delivery = %+v, %v", delivery, err)
+	}
+	if delivery.Event.Source != "baota-prod" || delivery.Event.RoutingKey != "infrastructure" || delivery.Event.Severity != "warning" || delivery.Event.Status != "info" || delivery.Event.Labels["category"] != "disk" {
+		t.Fatalf("simple event = %+v", delivery.Event)
+	}
+	if accepted.EventID == "" || delivery.Event.EventID != accepted.EventID {
+		t.Fatalf("accepted = %+v delivery event=%q", accepted, delivery.Event.EventID)
+	}
+}
+
+func TestSimpleNotificationEndpointRejectsUnauthorizedInvalidAndLimitedRequests(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "alertbridge.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	plain, publicID, secretHash, err := auth.GenerateBearerToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := auth.IngressToken{
+		ID: "baota-prod", PublicID: publicID, SecretHash: secretHash, Enabled: true,
+		RoutingKey: "infrastructure", Severity: "warning", RateLimitPerMinute: 4,
+	}
+	handler := New(Config{
+		Database: database,
+		BearerVerifier: auth.BearerVerifier{Lookup: func(id string) (auth.IngressToken, bool) {
+			return token, id == publicID
+		}},
+		Routes:          map[string]map[string][]string{"infrastructure": {"warning": {"feishu.ops"}}},
+		EnabledChannels: map[string]bool{"feishu.ops": true},
+		DedupeWindow:    30 * time.Minute,
+		Now:             func() time.Time { return now },
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	call := func(authHeader string, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/notifications", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		if authHeader != "" {
+			request.Header.Set("Authorization", authHeader)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+
+	unauthorized := call("", `{"title":"x","message":"y"}`)
+	if unauthorized.Code != http.StatusUnauthorized || unauthorized.Header().Get("WWW-Authenticate") != `Bearer realm="alertbridge"` {
+		t.Fatalf("unauthorized = %d headers=%v body=%s", unauthorized.Code, unauthorized.Header(), unauthorized.Body.String())
+	}
+	queryCredential := httptest.NewRequest(http.MethodPost, "/api/v1/notifications?token="+plain, strings.NewReader(`{"title":"x","message":"y"}`))
+	queryCredential.Header.Set("Content-Type", "application/json")
+	queryResponse := httptest.NewRecorder()
+	handler.ServeHTTP(queryResponse, queryCredential)
+	if queryResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("query credential = %d body=%s", queryResponse.Code, queryResponse.Body.String())
+	}
+	tooLarge := call("Bearer "+plain, `{"title":"x","message":"`+strings.Repeat("x", 8200)+`"}`)
+	if tooLarge.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("large body = %d body=%s", tooLarge.Code, tooLarge.Body.String())
+	}
+	invalid := call("Bearer "+plain, `{"title":"x","message":"y","status":"resolved"}`)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid fields = %d body=%s", invalid.Code, invalid.Body.String())
+	}
+	invalidCategory := call("Bearer "+plain, `{"title":"x","message":"y","category":"bad\ncategory"}`)
+	if invalidCategory.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid category = %d body=%s", invalidCategory.Code, invalidCategory.Body.String())
+	}
+	valid := call("Bearer "+plain, `{"title":"x","message":"y"}`)
+	if valid.Code != http.StatusAccepted {
+		t.Fatalf("valid = %d body=%s", valid.Code, valid.Body.String())
+	}
+	limited := call("Bearer "+plain, `{"title":"x","message":"y"}`)
+	if limited.Code != http.StatusTooManyRequests || limited.Header().Get("Retry-After") != "60" {
+		t.Fatalf("limited = %d headers=%v body=%s", limited.Code, limited.Header(), limited.Body.String())
+	}
 }
 
 func TestLegacyHookEndpointsAreGone(t *testing.T) {

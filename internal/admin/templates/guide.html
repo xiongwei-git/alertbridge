@@ -1,7 +1,27 @@
 {{define "content"}}
 <section class="panel guide-hero">
-  <div><p class="eyebrow">INTEGRATION GUIDE</p><h2>外部服务如何调用</h2><p>页面会自动识别当前服务地址并代入示例。客户端 ID 用来标识调用方，密钥用来证明请求确实来自它；接入指南不会读取或回显密钥。</p></div>
-  <ol class="guide-steps" aria-label="接入步骤"><li><span>1</span><strong>保存身份</strong><small>记录 Client ID 和只显示一次的密钥</small></li><li><span>2</span><strong>签名请求</strong><small>对实际发送的原始 JSON 字节签名</small></li><li><span>3</span><strong>确认投递</strong><small>收到 202 后到投递记录核对结果</small></li></ol>
+  <div><p class="eyebrow">INTEGRATION GUIDE</p><h2>外部服务如何调用</h2><p>页面会自动识别当前服务地址并代入示例。简单 Webhook 使用轻量令牌；需要防重放、幂等和故障恢复时使用 HMAC 客户端。</p></div>
+  <ol class="guide-steps" aria-label="接入步骤"><li><span>1</span><strong>选择方式</strong><small>简单通知使用令牌，完整事件使用 HMAC</small></li><li><span>2</span><strong>保存凭据</strong><small>令牌和密钥都只显示一次</small></li><li><span>3</span><strong>确认投递</strong><small>收到 202 后到投递记录核对结果</small></li></ol>
+</section>
+
+<section class="panel guide-card" id="simple-api">
+  <p class="eyebrow">SIMPLE NOTIFICATION API</p><h2>轻量通知接口</h2><p>适合宝塔自定义消息通道等只需要发送标题和正文的工具。路由、级别和来源由轻量令牌固定，正文不能覆盖。</p><code class="endpoint">POST {{.GuideBaseURL}}/api/v1/notifications</code>
+  <pre class="code-block" tabindex="0"><code>curl --fail-with-body --silent --show-error \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer 粘贴轻量接入令牌' \
+  --data-binary '{"title":"AlertBridge 接入测试","message":"轻量令牌调用成功。","category":"manual"}' \
+  '{{.GuideBaseURL}}/api/v1/notifications'</code></pre>
+  <div class="panel-heading"><div><h3>宝塔自定义消息通道</h3><p>URL 使用上方地址，请求头和自定义正文分别填写：</p></div></div>
+  <pre class="code-block" tabindex="0"><code>{
+  "Authorization": "Bearer 粘贴轻量接入令牌",
+  "Content-Type": "application/json"
+}</code></pre>
+  <pre class="code-block" tabindex="0"><code>{
+  "title": "$title",
+  "message": "$msg",
+  "category": "$type"
+}</code></pre>
+  <div class="notice error guide-warning"><strong>令牌不要放进 URL。</strong>轻量入口固定生成 <code>info</code> 事件，不参与 <code>firing/resolved</code> 故障闭环；需要幂等、防重放或恢复通知时请使用下方完整事件接口。</div>
 </section>
 
 <section class="panel compact">
@@ -18,11 +38,11 @@
 </section>
 
 <section class="panel guide-card">
-  <p class="eyebrow">CANONICAL EVENT API</p><h2>统一事件接口</h2><p>这是 AlertBridge 唯一的正式入站契约。调用方负责把自身事件映射成下面的统一结构，再对原始 JSON 正文签名。</p><code class="endpoint">POST {{.GuideBaseURL}}/api/v1/events</code><ul class="guide-list"><li>正文必须明确包含 <code>routing_key</code></li><li>服务可靠写入后返回 <code>202 Accepted</code></li><li>原始 JSON 正文上限为 32 KiB</li></ul>
+  <p class="eyebrow">CANONICAL EVENT API</p><h2>完整事件接口</h2><p>这是 AlertBridge 的完整事件生命周期契约。调用方负责把自身事件映射成统一结构，再对原始 JSON 正文签名。</p><code class="endpoint">POST {{.GuideBaseURL}}/api/v1/events</code><ul class="guide-list"><li>正文必须明确包含 <code>routing_key</code></li><li>服务可靠写入后返回 <code>202 Accepted</code></li><li>原始 JSON 正文上限为 32 KiB</li></ul>
 </section>
 
 <section class="panel">
-  <div class="panel-heading"><div><p class="eyebrow">AUTHENTICATION</p><h2>签名规则</h2><p>所有调用方都使用这一套认证方式。</p></div></div>
+  <div class="panel-heading"><div><p class="eyebrow">AUTHENTICATION</p><h2>签名规则</h2><p>完整事件客户端使用这一套认证方式。</p></div></div>
   <div class="signature-flow" aria-label="签名计算过程"><div><span>1</span><p>计算正文摘要</p><code>hex(SHA256(raw_body))</code></div><i>→</i><div><span>2</span><p>拼接待签名文本</p><code>timestamp\nnonce\nbody_digest</code></div><i>→</i><div><span>3</span><p>使用客户端密钥</p><code>hex(HMAC-SHA256(secret, text))</code></div></div>
   <div class="table-wrap"><table class="data-table guide-header-table"><thead><tr><th>请求头</th><th>用途</th></tr></thead><tbody><tr><td><code>X-Notify-Client</code></td><td>创建客户端时填写的 Client ID</td></tr><tr><td><code>X-Notify-Timestamp</code></td><td>当前 Unix 秒级时间戳，必须在服务器允许时间窗内</td></tr><tr><td><code>X-Notify-Nonce</code></td><td>每次请求使用新的 8–128 位随机字符串，防止重放</td></tr><tr><td><code>X-Notify-Signature</code></td><td>按上方规则计算的 64 位十六进制 HMAC-SHA256</td></tr></tbody></table></div>
   <div class="notice error guide-warning"><strong>不要先签名再修改正文。</strong>空格、换行或字段顺序发生变化都会导致签名失效。密钥应放在环境变量或 Secret 文件中，不要写进 Git、日志或前端代码。</div>

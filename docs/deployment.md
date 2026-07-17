@@ -34,7 +34,7 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.2.3/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.3.0/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
@@ -49,7 +49,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.2.3' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.3.0' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -163,20 +163,59 @@ https://你的域名/admin/
 
 1. 在“通知渠道”保存渠道凭据并测试发送；
 2. 在“路由规则”建立每个 `routing_key + severity` 的目标渠道；
-3. 在“客户端”创建调用身份，立即保存只显示一次的密钥；
-4. 在“接入指南”复制签名示例并提交测试事件；
+3. 在“客户端”按来源能力创建轻量令牌或 HMAC 调用身份，立即保存只显示一次的凭据；
+4. 在“接入指南”复制对应示例并提交测试通知或事件；
 5. 在“投递记录”确认最终发送结果。
 
-所有业务配置都写入 SQLite，敏感字段先用独立主密钥进行 AES-256-GCM 加密。修改成功后立即切换运行快照，无需重启。
+所有业务配置都写入 SQLite。需要再次使用的敏感字段由独立主密钥进行 AES-256-GCM 加密；轻量令牌只保存不可恢复的摘要。修改成功后立即切换运行快照，无需重启。
+
+### 7.1 宝塔自定义消息通道接入
+
+宝塔只能配置固定 URL、请求头和带变量的 JSON 正文时，不需要额外部署签名适配器：
+
+1. 先创建并启用通知渠道；
+2. 建立目标 `routing_key + severity` 路由规则；
+3. 在“客户端”创建轻量接入令牌，选择这条规则，限额建议从 10 次/分钟开始；
+4. 立即保存只显示一次的令牌。
+
+在宝塔自定义消息通道中填写：
+
+```text
+请求方式：POST
+URL：https://你的域名/api/v1/notifications
+```
+
+请求头：
+
+```json
+{
+  "Authorization": "Bearer 粘贴轻量接入令牌",
+  "Content-Type": "application/json"
+}
+```
+
+自定义正文：
+
+```json
+{
+  "title": "$title",
+  "message": "$msg",
+  "category": "$type"
+}
+```
+
+宝塔变量只填充标题、正文和可选分类。来源、路由、级别由令牌在服务端固定，状态始终是 `info`，因此不会产生无法关闭的活跃故障。令牌不要拼进 URL；泄露时在后台停用或轮换即可。需要故障发生/恢复闭环时仍使用 HMAC 完整事件接口。
+
+上述字段来自[宝塔自定义消息通道指南](https://www.bt.cn/bbs/thread-143326-1-1.html)中的 `$title`、`$msg`、`$type`。原帖界面以 Linux 面板 9.5.0 为例，其他版本的菜单名称可能不同，但请求 URL、请求头和自定义正文的配置原则相同。
 
 ## 8. 上线验收
 
 1. HTTPS 域名的 `/healthz` 和 `/readyz` 正常；
 2. 管理员可以登录，Cookie 通过 HTTPS 正常保存；
 3. 每个渠道的后台测试消息到达；
-4. 每个客户端至少允许一个已配置路由；
-5. 签名测试事件得到 `202 Accepted`；
-6. 原样重放同一 Nonce 得到 `401`；
+4. 每个 HMAC 客户端至少允许一个已配置路由，每个轻量令牌固定一条已配置规则；
+5. 轻量测试通知和 HMAC 签名测试事件都得到 `202 Accepted`；
+6. 原样重放同一 HMAC Nonce 得到 `401`；
 7. 新 Nonce 配相同 `event_id` 得到 `outcome=duplicate`，渠道不重复发送；
 8. 日志中没有 Webhook、Token、密码、签名或完整请求正文。
 
@@ -284,7 +323,9 @@ curl -fsS http://127.0.0.1:18080/readyz
 | 主密钥无法创建或读取 | `alertbridge-secrets` 卷是否可写；密钥是否被损坏；不要手工替换正在使用的主密钥 |
 | 后台登录后又回到登录页 | 必须通过 HTTPS；检查 Nginx 的 `Host`、`X-Forwarded-Proto` 和浏览器 Secure Cookie |
 | `/readyz` 返回 503 | 检查两个卷、磁盘空间、SQLite 日志和容器启动日志 |
-| API 返回 401 | 检查 Client ID、服务器时间、Nonce 和原始正文签名 |
+| 轻量 API 返回 401 | 检查 `Authorization: Bearer ...` 是否完整、令牌是否启用或已经轮换；不要把令牌放在 URL |
+| HMAC API 返回 401 | 检查 Client ID、服务器时间、Nonce 和原始正文签名 |
+| API 返回 429 | 对应客户端或轻量令牌已达到当前分钟限额，等待 `Retry-After` 后再试或核对异常调用来源 |
 | API 返回 `403 route_forbidden` | 客户端没有允许该 `routing_key` |
 | API 返回 `422 route_unavailable` | 对应路由和严重程度没有绑定已启用渠道 |
 | “活跃故障”测试后一直为 1 | 测试事件误用了 `status=firing`；发送相同客户端、路由和 `dedupe_key` 的 `resolved` 关闭故障，后续测试使用 `status=test` |
@@ -294,4 +335,4 @@ curl -fsS http://127.0.0.1:18080/readyz
 | 18080 被占用 | 修改 `.env` 的 `ALERTBRIDGE_PORT` 后重新创建容器 |
 | 通知时间比北京时间少 8 小时 | 使用 v0.2.2 或更高版本；确认 `ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai`，不要修改服务器系统时钟 |
 
-不要通过关闭 HMAC、使用固定弱密码、把密码放入容器环境变量、放宽出站地址校验或开放应用端口来绕过故障。
+不要通过关闭既有认证、把令牌放进 URL、使用固定弱密码、把密码放入容器环境变量、放宽出站地址校验或开放应用端口来绕过故障。

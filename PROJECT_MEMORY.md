@@ -1,11 +1,11 @@
 # AlertBridge Project Memory
 
-## Current state (2026-07-16)
+## Current state (2026-07-17)
 
-- AlertBridge v0.2.3 is a lightweight, single-instance notification gateway ready for its current production stage.
+- AlertBridge v0.3.0 is the lightweight-ingress production release. It adds the constrained notification API without changing the deployed HMAC contract.
 - Build toolchain: Go 1.26.5 with module language level 1.25.0. Runtime uses pure-Go SQLite, one HTTP process, one SQLite connection, and one persistent delivery worker.
-- Public API: `POST /api/v1/events`; health: `/healthz` and `/readyz`; management console: `/admin/`.
-- Implemented: per-client HMAC, replay protection, route authorization, rate limiting, idempotency, incident lifecycle through matching `firing` and `resolved` events, silences, credential rotation, persistent delivery retries, manual retry, and dead letters.
+- Public APIs in current source: `POST /api/v1/notifications` for constrained one-off Bearer notifications and `POST /api/v1/events` for full HMAC event lifecycles; health: `/healthz` and `/readyz`; management console: `/admin/`.
+- Implemented: hash-only lightweight ingress tokens bound to a server-side source, route, severity, `info` status, and independent 1–60/minute limit; per-client HMAC, replay protection, route authorization, rate limiting, idempotency, incident lifecycle through matching `firing` and `resolved` events, silences, credential rotation, persistent delivery retries, manual retry, and dead letters.
 - Channel adapters: Feishu text/cards with optional security-keyword injection, Telegram Bot, ntfy, and TLS/STARTTLS SMTP.
 - The admin UI is server-rendered and has no external JavaScript, font, or CDN dependency.
 - Production deployment needs only `compose.yaml`, `.env`, and `secrets/admin_password`; it does not require a repository clone or JSON business configuration.
@@ -15,7 +15,8 @@
 ## Accepted decisions
 
 - Keep the current runtime single-process and single-instance; do not add Redis, PostgreSQL, or additional workers without measured need.
-- Keep one canonical inbound event API. Callers adapt payloads; AlertBridge does not maintain product-named or heuristic input parsers.
+- Keep two explicit inbound contracts: constrained `POST /api/v1/notifications` for one-off notifications and canonical `POST /api/v1/events` for full event lifecycles. AlertBridge does not maintain product-named or heuristic input parsers.
+- Lightweight tokens stay header-only, high-entropy, hash-only at rest, independently rate-limited, server-bound to route and severity, and fixed to `info`; see ADR-008.
 - Keep SQLite at WAL + `synchronous=FULL` with one connection.
 - Keep the image `scratch`, non-root, read-only, capability-free, loopback-bound, and resource-limited.
 - GHCR is the only official release registry. ACR is an optional authenticated deployment mirror copied from the immutable GHCR digest; Docker Hub is not used.
@@ -38,7 +39,7 @@
 ## Deferred scope
 
 - Multi-event aggregation, acknowledgement, timeout escalation, alert detail pages, Prometheus metrics, multi-instance storage, administrator password self-service/reset, and additional outbound channel adapters.
-- Product-named inbound parsers remain outside scope; source systems or trusted adapters must produce the canonical API payload and signature.
+- Product-named inbound parsers remain outside scope. Fixed Webhooks may adapt to the lightweight title/message contract; full lifecycle sources or trusted adapters must produce the canonical event payload and signature.
 
 ## Verification commands
 
@@ -51,6 +52,6 @@ go vet ./...
 
 ## Resume point
 
-- The current milestone is complete and the project is in maintenance mode.
+- The lightweight ingress milestone is released as v0.3.0. The production server remains pinned to v0.2.3 until the user explicitly authorizes an upgrade.
 - Start a future task by reading `AGENTS.md`, `README.md`, this file, and only the relevant document under `docs/`.
 - There is no required feature backlog for the next session. Prefer bug fixes, operational evidence, or measured user demand over speculative expansion.

@@ -54,6 +54,9 @@ func TestAdminAuthenticationCSRFAndClientCreation(t *testing.T) {
 	if clientsPage.Code != http.StatusOK || !strings.Contains(clientsPage.Body.String(), `class="data-table client-table"`) || !strings.Contains(clientsPage.Body.String(), `form="client-edit-seed-client"`) || !strings.Contains(clientsPage.Body.String(), `data-label="操作"`) {
 		t.Fatalf("client layout response = %d, %s", clientsPage.Code, clientsPage.Body.String())
 	}
+	if !strings.Contains(clientsPage.Body.String(), "轻量接入令牌") || !strings.Contains(clientsPage.Body.String(), `name="route_rule"`) {
+		t.Fatalf("simple token controls are missing: %s", clientsPage.Body.String())
+	}
 	if !strings.Contains(clientsPage.Body.String(), `href="/admin/guide">接入指南</a>`) {
 		t.Fatalf("integration guide navigation is missing: %s", clientsPage.Body.String())
 	}
@@ -68,7 +71,7 @@ func TestAdminAuthenticationCSRFAndClientCreation(t *testing.T) {
 		t.Fatalf("route selector/help response = %d, %s", routesPage.Code, routesPage.Body.String())
 	}
 	guidePage := serve(handler, http.MethodGet, "/admin/guide", nil, cookie)
-	if guidePage.Code != http.StatusOK || !strings.Contains(guidePage.Body.String(), "外部服务如何调用") || !strings.Contains(guidePage.Body.String(), "X-Notify-Signature") || !strings.Contains(guidePage.Body.String(), "openssl dgst") || !strings.Contains(guidePage.Body.String(), `POST http://example.com/api/v1/events`) || !strings.Contains(guidePage.Body.String(), `BASE_URL='http://example.com'`) {
+	if guidePage.Code != http.StatusOK || !strings.Contains(guidePage.Body.String(), "外部服务如何调用") || !strings.Contains(guidePage.Body.String(), "X-Notify-Signature") || !strings.Contains(guidePage.Body.String(), "openssl dgst") || !strings.Contains(guidePage.Body.String(), `POST http://example.com/api/v1/events`) || !strings.Contains(guidePage.Body.String(), `BASE_URL='http://example.com'`) || !strings.Contains(guidePage.Body.String(), `POST http://example.com/api/v1/notifications`) || !strings.Contains(guidePage.Body.String(), `"message": "$msg"`) {
 		t.Fatalf("integration guide response = %d, %s", guidePage.Code, guidePage.Body.String())
 	}
 	for _, removed := range []string{"/hooks/", "Gatus", "Alertmanager", "Grafana", "Uptime Kuma"} {
@@ -99,6 +102,15 @@ func TestAdminAuthenticationCSRFAndClientCreation(t *testing.T) {
 	record, err := database.GetClient(context.Background(), "new-client")
 	if err != nil || !record.Enabled || record.RateLimitPerMinute != 30 || strings.Join(record.AllowedRoutes, ",") != "ops,security" {
 		t.Fatalf("stored client = %#v, err = %v", record, err)
+	}
+
+	createdToken := serve(handler, http.MethodPost, "/admin/tokens/create", url.Values{"csrf": {csrf}, "id": {"baota-prod"}, "route_rule": {"ops|critical"}, "rate_limit": {"10"}, "enabled": {"on"}}, cookie)
+	if createdToken.Code != http.StatusCreated || !strings.Contains(createdToken.Body.String(), "baota-prod 的新轻量令牌") || !strings.Contains(createdToken.Body.String(), "abt_") {
+		t.Fatalf("create token response = %d, %s", createdToken.Code, createdToken.Body.String())
+	}
+	tokenRecord, err := database.GetIngressToken(context.Background(), "baota-prod")
+	if err != nil || !tokenRecord.Enabled || tokenRecord.RoutingKey != "ops" || tokenRecord.Severity != "critical" || tokenRecord.RateLimitPerMinute != 10 || len(tokenRecord.TokenHash) != 32 {
+		t.Fatalf("stored token = %#v, err = %v", tokenRecord, err)
 	}
 }
 
