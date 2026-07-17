@@ -1,8 +1,42 @@
 openapi: 3.1.0
 info:
   title: AlertBridge API
-  version: 1.2.0
+  version: 1.3.0
 paths:
+  /api/v1/notifications:
+    post:
+      summary: Accept a constrained one-off notification
+      description: The Bearer token fixes source, routing key, severity, and rate limit. The server generates an info event and persists it through the normal delivery queue.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Notification'
+      responses:
+        '202':
+          description: Notification durably accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '400': { $ref: '#/components/responses/Error' }
+        '401':
+          description: Invalid or disabled Bearer token
+          headers:
+            WWW-Authenticate:
+              schema: { type: string }
+              description: Bearer challenge
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
   /api/v1/events:
     post:
       summary: Accept a notification event
@@ -45,11 +79,28 @@ paths:
         '503': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
+    BearerAuth: { type: http, scheme: bearer }
     ClientID: { type: apiKey, in: header, name: X-Notify-Client }
     Timestamp: { type: apiKey, in: header, name: X-Notify-Timestamp }
     Nonce: { type: apiKey, in: header, name: X-Notify-Nonce }
     Signature: { type: apiKey, in: header, name: X-Notify-Signature }
   schemas:
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [title, message]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Must not contain line breaks.
+        message: { type: string, minLength: 1, maxLength: 4000 }
+        category:
+          type: string
+          maxLength: 64
+          description: Optional category copied to the category label. Must not contain line breaks.
+        url: { type: string, format: uri }
     Event:
       type: object
       additionalProperties: false

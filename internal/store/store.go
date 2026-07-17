@@ -182,23 +182,61 @@ func (s *Store) RecordRequest(ctx context.Context, clientID, nonce string, expir
 	if inserted == 0 {
 		return ErrReplay
 	}
-	bucket := now.Unix() / 60
-	_, _ = tx.ExecContext(ctx, "DELETE FROM rate_windows WHERE minute_bucket < ?", bucket-2)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO rate_windows(client_id, minute_bucket, request_count) VALUES(?,?,1)
-ON CONFLICT(client_id, minute_bucket) DO UPDATE SET request_count=request_count+1`, clientID, bucket); err != nil {
-		return err
-	}
-	var count int
-	if err := tx.QueryRowContext(ctx, "SELECT request_count FROM rate_windows WHERE client_id=? AND minute_bucket=?", clientID, bucket).Scan(&count); err != nil {
+	exceeded, err := recordRateWindow(ctx, tx, "hmac:"+clientID, now, limit)
+	if err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	if count > limit {
+	if exceeded {
 		return ErrRateLimit
 	}
 	return nil
+}
+
+func (s *Store) RecordRateLimit(ctx context.Context, key string, now time.Time, limit int) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	exceeded, err := recordRateWindow(ctx, tx, key, now, limit)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if exceeded {
+		return ErrRateLimit
+	}
+	return nil
+}
+
+func recordRateWindow(ctx context.Context, tx *sql.Tx, key string, now time.Time, limit int) (bool, error) {
+	bucket := now.Unix() / 60
+	_, _ = tx.ExecContext(ctx, "DELETE FROM rate_windows WHERE minute_bucket < ?", bucket-2)
+	var count int
+	err := tx.QueryRowContext(ctx, "SELECT request_count FROM rate_windows WHERE client_id=? AND minute_bucket=?", key, bucket).Scan(&count)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if limit < 1 {
+			return true, nil
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT INTO rate_windows(client_id, minute_bucket, request_count) VALUES(?,?,1)", key, bucket); err != nil {
+			return false, err
+		}
+		return false, nil
+	case err != nil:
+		return false, err
+	case count >= limit:
+		return true, nil
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE rate_windows SET request_count=request_count+1 WHERE client_id=? AND minute_bucket=?", key, bucket); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 func (s *Store) AcceptEvent(ctx context.Context, p AcceptParams) (AcceptResult, error) {

@@ -111,8 +111,21 @@ create_status=$(curl -sS -o "$tmp_dir/client-secret.html" -w '%{http_code}' -b "
 client_secret=$(sed -n 's/.*<pre class="secret-value" tabindex="0">\([^<]*\)<\/pre>.*/\1/p' "$tmp_dir/client-secret.html")
 [ "${#client_secret}" -eq 64 ] || { printf 'client secret was not rendered once\n' >&2; exit 1; }
 
+token_status=$(curl -sS -o "$tmp_dir/token-secret.html" -w '%{http_code}' -b "$tmp_dir/cookies.txt" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode "csrf=$csrf" \
+  --data-urlencode 'id=baota-e2e' \
+  --data-urlencode 'route_rule=infrastructure|critical' \
+  --data-urlencode 'rate_limit=10' \
+  --data-urlencode 'enabled=on' \
+  "http://127.0.0.1:$port/admin/tokens/create")
+[ "$token_status" = 201 ] || { cat "$tmp_dir/token-secret.html"; exit 1; }
+ingress_token=$(sed -n 's/.*<pre class="secret-value" tabindex="0">\([^<]*\)<\/pre>.*/\1/p' "$tmp_dir/token-secret.html")
+[ "${#ingress_token}" -eq 85 ] || { printf 'lightweight ingress token was not rendered once\n' >&2; exit 1; }
+
 curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/clients" > "$tmp_dir/clients.html"
 grep -q 'type="checkbox" name="routes" value="infrastructure" checked' "$tmp_dir/clients.html"
+grep -q 'baota-e2e' "$tmp_dir/clients.html"
 grep -q 'class="term-help"' "$tmp_dir/clients.html"
 ! grep -q 'name="routes" placeholder=' "$tmp_dir/clients.html"
 curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/channels" > "$tmp_dir/channels.html"
@@ -125,7 +138,10 @@ grep -q 'X-Notify-Signature' "$tmp_dir/guide.html"
 grep -q "CLIENT_ID='e2e-client'" "$tmp_dir/guide.html"
 grep -Fq "BASE_URL='http://127.0.0.1:$port'" "$tmp_dir/guide.html"
 grep -Fq "POST http://127.0.0.1:$port/api/v1/events" "$tmp_dir/guide.html"
+grep -Fq "POST http://127.0.0.1:$port/api/v1/notifications" "$tmp_dir/guide.html"
+grep -Fq '"message": "$msg"' "$tmp_dir/guide.html"
 ! grep -q "$client_secret" "$tmp_dir/guide.html"
+! grep -q "$ingress_token" "$tmp_dir/guide.html"
 ! grep -q '/hooks/' "$tmp_dir/guide.html"
 ! grep -Eq 'Gatus|Alertmanager|Grafana|Uptime Kuma' "$tmp_dir/guide.html"
 
@@ -167,6 +183,20 @@ until curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":1'; do
   [ "$attempt" -lt 30 ] || exit 1
   sleep 0.2
 done
+
+simple_status=$(curl -sS -o "$tmp_dir/simple-response.json" -w '%{http_code}' \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $ingress_token" \
+  --data-binary '{"title":"Baota E2E alert","message":"Lightweight token delivery test","category":"baota"}' \
+  "http://127.0.0.1:$port/api/v1/notifications")
+[ "$simple_status" = 202 ] || { cat "$tmp_dir/simple-response.json"; exit 1; }
+grep -q '"event_id":"simple-' "$tmp_dir/simple-response.json"
+attempt=0
+until curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":2'; do
+  attempt=$((attempt + 1))
+  [ "$attempt" -lt 30 ] || exit 1
+  sleep 0.2
+done
 curl -fsS "http://127.0.0.1:$mock_port/last" > "$tmp_dir/last-notification.json"
 grep -Eq '时间[^+]*\+08:00' "$tmp_dir/last-notification.json"
 
@@ -196,11 +226,23 @@ changed_login=$(curl -sS -o /dev/null -w '%{http_code}' -H 'Content-Type: applic
 status=$(send_event nonce-0003)
 [ "$status" = 202 ] || { cat "$tmp_dir/response.json"; exit 1; }
 grep -q '"outcome":"duplicate"' "$tmp_dir/response.json"
-curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":1'
+
+simple_status=$(curl -sS -o "$tmp_dir/simple-response-after-restart.json" -w '%{http_code}' \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $ingress_token" \
+  --data-binary '{"title":"Baota E2E restart","message":"Lightweight token survived restart"}' \
+  "http://127.0.0.1:$port/api/v1/notifications")
+[ "$simple_status" = 202 ] || { cat "$tmp_dir/simple-response-after-restart.json"; exit 1; }
+attempt=0
+until curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":3'; do
+  attempt=$((attempt + 1))
+  [ "$attempt" -lt 30 ] || exit 1
+  sleep 0.2
+done
 
 image_id=$(compose images -q alertbridge)
 image_bytes=$(docker image inspect "$image_id" --format '{{.Size}}')
 memory_usage=$(docker stats --no-stream --format '{{.MemUsage}}' "$container_id")
 
-printf 'Docker E2E passed: empty first boot, Argon2id admin bootstrap, UI-only dynamic setup, canonical signed API, replay rejection, delivery, and key/config persistence.\n'
+printf 'Docker E2E passed: empty first boot, Argon2id admin bootstrap, UI-only dynamic setup, HMAC and lightweight Bearer APIs, replay rejection, delivery, and key/config persistence.\n'
 printf 'Docker footprint: image_bytes=%s idle_memory=%s\n' "$image_bytes" "$memory_usage"

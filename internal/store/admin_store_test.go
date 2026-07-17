@@ -26,6 +26,22 @@ func TestDynamicConfigurationCRUD(t *testing.T) {
 		t.Fatalf("client = %+v", got)
 	}
 
+	token := IngressTokenRecord{
+		ID: "baota-prod", PublicID: "0011223344556677", TokenHash: bytes.Repeat([]byte{2}, 32),
+		Enabled: true, RoutingKey: "infra", Severity: "warning", RateLimitPerMinute: 10,
+	}
+	if err := database.UpsertIngressToken(ctx, token, now); err != nil {
+		t.Fatal(err)
+	}
+	storedToken, err := database.GetIngressToken(ctx, token.ID)
+	if err != nil || storedToken.PublicID != token.PublicID || !bytes.Equal(storedToken.TokenHash, token.TokenHash) || storedToken.RoutingKey != "infra" {
+		t.Fatalf("ingress token = %+v, %v", storedToken, err)
+	}
+	tokens, err := database.ListIngressTokens(ctx)
+	if err != nil || len(tokens) != 1 {
+		t.Fatalf("ingress tokens = %+v, %v", tokens, err)
+	}
+
 	channel := ChannelRecord{ID: "feishu.ops", Type: "feishu", Enabled: true, ConfigCipher: []byte("encrypted")}
 	if err := database.UpsertChannel(ctx, channel, now); err != nil {
 		t.Fatal(err)
@@ -47,6 +63,9 @@ func TestDynamicConfigurationCRUD(t *testing.T) {
 		t.Fatalf("silences = %+v, %v", silences, err)
 	}
 	if err := database.DeleteSilence(ctx, silenceID); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.DeleteIngressToken(ctx, token.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := database.DeleteChannel(ctx, "feishu.ops"); err != nil {

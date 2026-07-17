@@ -59,6 +59,7 @@ type pageData struct {
 	Error                string
 	Stats                store.DashboardStats
 	Clients              []runtimecfg.ClientView
+	IngressTokens        []runtimecfg.IngressTokenView
 	Channels             []runtimecfg.ChannelView
 	Routes               []runtimecfg.RouteView
 	Silences             []store.SilenceRecord
@@ -69,6 +70,7 @@ type pageData struct {
 	TotalPages           int
 	Secret               string
 	SecretOwner          string
+	SecretKind           string
 	NowLocal             string
 	GuideClientID        string
 	GuideClientEnabled   bool
@@ -201,6 +203,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.createClient(w, r, session)
 	case "/admin/clients/action":
 		h.clientAction(w, r, session)
+	case "/admin/tokens/create":
+		h.createIngressToken(w, r, session)
+	case "/admin/tokens/action":
+		h.ingressTokenAction(w, r, session)
 	case "/admin/channels":
 		h.channels(w, r, session)
 	case "/admin/channels/save":
@@ -321,6 +327,7 @@ func (h *Handler) clients(w http.ResponseWriter, r *http.Request, session store.
 	}
 	data := h.page(r, session, "客户端", "clients", "", store.DashboardStats{})
 	data.Clients = h.cfg.Gateway.Clients()
+	data.IngressTokens = h.cfg.Gateway.IngressTokens()
 	data.Routes = h.cfg.Gateway.Routes()
 	data.RouteOptions = routeOptions(data.Clients, data.Routes)
 	h.render(w, http.StatusOK, "clients.html", data)
@@ -337,7 +344,7 @@ func (h *Handler) createClient(w http.ResponseWriter, r *http.Request, session s
 		h.redirectFailure(w, r, "/admin/clients", err)
 		return
 	}
-	h.render(w, http.StatusCreated, "secret.html", pageData{Title: "客户端密钥", Active: "clients", CSRF: session.CSRFToken, Secret: secret, SecretOwner: r.Form.Get("id")})
+	h.render(w, http.StatusCreated, "secret.html", pageData{Title: "客户端密钥", Active: "clients", CSRF: session.CSRFToken, Secret: secret, SecretOwner: r.Form.Get("id"), SecretKind: "client"})
 }
 
 func (h *Handler) clientAction(w http.ResponseWriter, r *http.Request, session store.AdminSession) {
@@ -359,10 +366,68 @@ func (h *Handler) clientAction(w http.ResponseWriter, r *http.Request, session s
 			h.redirectFailure(w, r, "/admin/clients", err)
 			return
 		}
-		h.render(w, http.StatusOK, "secret.html", pageData{Title: "新客户端密钥", Active: "clients", CSRF: session.CSRFToken, Secret: secret, SecretOwner: id})
+		h.render(w, http.StatusOK, "secret.html", pageData{Title: "新客户端密钥", Active: "clients", CSRF: session.CSRFToken, Secret: secret, SecretOwner: id, SecretKind: "client"})
 		return
 	case "delete":
 		if err := h.cfg.Gateway.DeleteClient(r.Context(), id); err != nil {
+			h.redirectFailure(w, r, "/admin/clients", err)
+			return
+		}
+	default:
+		h.redirectFailure(w, r, "/admin/clients", errors.New("unknown action"))
+		return
+	}
+	http.Redirect(w, r, "/admin/clients?ok=saved", http.StatusSeeOther)
+}
+
+func (h *Handler) createIngressToken(w http.ResponseWriter, r *http.Request, session store.AdminSession) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	route, severity, err := splitRouteRule(r.Form.Get("route_rule"))
+	if err != nil {
+		h.redirectFailure(w, r, "/admin/clients", err)
+		return
+	}
+	limit, _ := strconv.Atoi(r.Form.Get("rate_limit"))
+	id := strings.TrimSpace(r.Form.Get("id"))
+	plain, err := h.cfg.Gateway.CreateIngressToken(r.Context(), id, r.Form.Get("enabled") == "on", route, severity, limit)
+	if err != nil {
+		h.redirectFailure(w, r, "/admin/clients", err)
+		return
+	}
+	h.render(w, http.StatusCreated, "secret.html", pageData{Title: "轻量接入令牌", Active: "clients", CSRF: session.CSRFToken, Secret: plain, SecretOwner: id, SecretKind: "token"})
+}
+
+func (h *Handler) ingressTokenAction(w http.ResponseWriter, r *http.Request, session store.AdminSession) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	id, action := r.Form.Get("id"), r.Form.Get("action")
+	switch action {
+	case "update":
+		route, severity, err := splitRouteRule(r.Form.Get("route_rule"))
+		if err != nil {
+			h.redirectFailure(w, r, "/admin/clients", err)
+			return
+		}
+		limit, _ := strconv.Atoi(r.Form.Get("rate_limit"))
+		if err := h.cfg.Gateway.UpdateIngressToken(r.Context(), id, r.Form.Get("enabled") == "on", route, severity, limit); err != nil {
+			h.redirectFailure(w, r, "/admin/clients", err)
+			return
+		}
+	case "rotate":
+		plain, err := h.cfg.Gateway.RotateIngressToken(r.Context(), id)
+		if err != nil {
+			h.redirectFailure(w, r, "/admin/clients", err)
+			return
+		}
+		h.render(w, http.StatusOK, "secret.html", pageData{Title: "新轻量接入令牌", Active: "clients", CSRF: session.CSRFToken, Secret: plain, SecretOwner: id, SecretKind: "token"})
+		return
+	case "delete":
+		if err := h.cfg.Gateway.DeleteIngressToken(r.Context(), id); err != nil {
 			h.redirectFailure(w, r, "/admin/clients", err)
 			return
 		}
@@ -800,6 +865,13 @@ func splitValues(values []string) []string {
 		}
 	}
 	return result
+}
+func splitRouteRule(value string) (string, string, error) {
+	route, severity, ok := strings.Cut(strings.TrimSpace(value), "|")
+	if !ok || route == "" || severity == "" || strings.Contains(severity, "|") {
+		return "", "", errors.New("invalid route rule")
+	}
+	return route, severity, nil
 }
 func routeOptions(clients []runtimecfg.ClientView, routes []runtimecfg.RouteView) []string {
 	seen := map[string]struct{}{}

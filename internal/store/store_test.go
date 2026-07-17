@@ -25,6 +25,28 @@ func TestRecordRequestRejectsReplayAndRateLimit(t *testing.T) {
 	}
 }
 
+func TestRecordRateLimitUsesIndependentBuckets(t *testing.T) {
+	database := openTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	if err := database.RecordRequest(ctx, "baota-a", "nonce-0001", now.Add(10*time.Minute), now, 1); err != nil {
+		t.Fatalf("HMAC request error = %v", err)
+	}
+	if err := database.RecordRateLimit(ctx, "bearer:baota-a", now, 1); err != nil {
+		t.Fatalf("token must not share the HMAC bucket: %v", err)
+	}
+	if err := database.RecordRateLimit(ctx, "bearer:baota-b", now, 1); err != nil {
+		t.Fatalf("independent token request error = %v", err)
+	}
+	if err := database.RecordRateLimit(ctx, "bearer:baota-a", now, 1); !errors.Is(err, ErrRateLimit) {
+		t.Fatalf("rate error = %v, want ErrRateLimit", err)
+	}
+	var count int
+	if err := database.db.QueryRowContext(ctx, "SELECT request_count FROM rate_windows WHERE client_id=? AND minute_bucket=?", "bearer:baota-a", now.Unix()/60).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("rejected requests must not grow the rate counter: count=%d err=%v", count, err)
+	}
+}
+
 func TestAcceptEventLifecycleAndIdempotency(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()

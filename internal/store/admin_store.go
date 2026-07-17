@@ -25,6 +25,17 @@ CREATE TABLE IF NOT EXISTS gateway_clients (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ingress_tokens (
+  id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 64),
+  public_id TEXT NOT NULL UNIQUE CHECK(length(public_id)=16),
+  token_hash BLOB NOT NULL CHECK(length(token_hash)=32),
+  enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+  routing_key TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK(severity IN ('critical','warning','info')),
+  rate_limit_per_minute INTEGER NOT NULL CHECK(rate_limit_per_minute BETWEEN 1 AND 60),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS notification_channels (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL,
@@ -81,6 +92,18 @@ type ClientRecord struct {
 	UpdatedAt          time.Time
 }
 
+type IngressTokenRecord struct {
+	ID                 string
+	PublicID           string
+	TokenHash          []byte
+	Enabled            bool
+	RoutingKey         string
+	Severity           string
+	RateLimitPerMinute int
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
 type ChannelRecord struct {
 	ID           string
 	Type         string
@@ -120,6 +143,7 @@ type AdminCredential struct {
 
 type DashboardStats struct {
 	Clients         int
+	IngressTokens   int
 	Channels        int
 	ActiveIncidents int
 	EventsToday     int
@@ -224,6 +248,56 @@ func scanClient(scanner interface{ Scan(...any) error }) (ClientRecord, error) {
 
 func (s *Store) DeleteClient(ctx context.Context, id string) error {
 	result, err := s.db.ExecContext(ctx, "DELETE FROM gateway_clients WHERE id=?", id)
+	return requireAffected(result, err, ErrNotFound)
+}
+
+func (s *Store) UpsertIngressToken(ctx context.Context, record IngressTokenRecord, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO ingress_tokens(id,public_id,token_hash,enabled,routing_key,severity,rate_limit_per_minute,created_at,updated_at)
+VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET public_id=excluded.public_id,token_hash=excluded.token_hash,enabled=excluded.enabled,routing_key=excluded.routing_key,severity=excluded.severity,rate_limit_per_minute=excluded.rate_limit_per_minute,updated_at=excluded.updated_at`,
+		record.ID, record.PublicID, record.TokenHash, boolInt(record.Enabled), record.RoutingKey, record.Severity, record.RateLimitPerMinute, now.UnixMilli(), now.UnixMilli())
+	return err
+}
+
+func (s *Store) GetIngressToken(ctx context.Context, id string) (IngressTokenRecord, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id,public_id,token_hash,enabled,routing_key,severity,rate_limit_per_minute,created_at,updated_at FROM ingress_tokens WHERE id=?`, id)
+	return scanIngressToken(row)
+}
+
+func (s *Store) ListIngressTokens(ctx context.Context) ([]IngressTokenRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,public_id,token_hash,enabled,routing_key,severity,rate_limit_per_minute,created_at,updated_at FROM ingress_tokens ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []IngressTokenRecord
+	for rows.Next() {
+		record, err := scanIngressToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, record)
+	}
+	return result, rows.Err()
+}
+
+func scanIngressToken(scanner interface{ Scan(...any) error }) (IngressTokenRecord, error) {
+	var record IngressTokenRecord
+	var enabled int
+	var createdMS, updatedMS int64
+	err := scanner.Scan(&record.ID, &record.PublicID, &record.TokenHash, &enabled, &record.RoutingKey, &record.Severity, &record.RateLimitPerMinute, &createdMS, &updatedMS)
+	if errors.Is(err, sql.ErrNoRows) {
+		return IngressTokenRecord{}, ErrNotFound
+	}
+	if err != nil {
+		return IngressTokenRecord{}, err
+	}
+	record.Enabled = enabled == 1
+	record.CreatedAt, record.UpdatedAt = time.UnixMilli(createdMS).UTC(), time.UnixMilli(updatedMS).UTC()
+	return record, nil
+}
+
+func (s *Store) DeleteIngressToken(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, "DELETE FROM ingress_tokens WHERE id=?", id)
 	return requireAffected(result, err, ErrNotFound)
 }
 
@@ -413,6 +487,7 @@ func (s *Store) Dashboard(ctx context.Context, now time.Time) (DashboardStats, e
 		target *int
 	}{
 		{"SELECT COUNT(*) FROM gateway_clients", nil, &stats.Clients},
+		{"SELECT COUNT(*) FROM ingress_tokens", nil, &stats.IngressTokens},
 		{"SELECT COUNT(*) FROM notification_channels", nil, &stats.Channels},
 		{"SELECT COUNT(*) FROM incidents WHERE state='firing'", nil, &stats.ActiveIncidents},
 		{"SELECT COUNT(*) FROM events WHERE created_at>=?", []any{now.Truncate(24 * time.Hour).UnixMilli()}, &stats.EventsToday},

@@ -3,7 +3,7 @@
 ## Scope and architecture
 
 - AlertBridge is a lightweight, single-instance notification gateway built with Go and SQLite.
-- `POST /api/v1/events` is the only supported inbound event contract. Callers adapt their payloads to it; do not add heuristic or product-named input parsers without a new ADR.
+- `POST /api/v1/events` is the only full event-lifecycle contract. `POST /api/v1/notifications` is the constrained one-off notification contract defined by ADR-008. Do not add heuristic, product-named, or additional inbound parsers without a new ADR.
 - Keep the runtime as one HTTP process, one SQLite connection, and one persistent delivery worker until measured requirements justify a different architecture.
 - The admin UI is server-rendered and has no external JavaScript, font, or CDN dependency.
 - Production TLS terminates at Baota Nginx. The application port remains bound to the host loopback interface.
@@ -12,6 +12,7 @@
 
 - Never commit `.env`, backups, databases, Webhooks, tokens, passwords, client keys, or the dynamic configuration master key.
 - Do not weaken HMAC authentication, replay protection, route authorization, secure cookies, TLS requirements, outbound host allowlists, or Secret file permission checks to make a test pass.
+- Lightweight ingress tokens must remain header-only, high-entropy, hash-only at rest, independently rate-limited, and bound to a server-side route and severity with `info` status. Never add URL tokens or caller-controlled lifecycle fields.
 - Production startup has no JSON business-config path. Clients, channels, and routes start empty and are managed through the authenticated admin console.
 - The `alertbridge-data` and `alertbridge-secrets` volumes are a recovery pair and must be backed up and restored together. Never silently regenerate a missing master key for an initialized database.
 - The administrator bootstrap password must enter through a file-backed Compose Secret below a host `0700` directory, never the service environment. Environment-sourced Compose Secrets are incompatible with the read-only service rootfs; see ADR-005. Only the Argon2id hash is stored in SQLite.

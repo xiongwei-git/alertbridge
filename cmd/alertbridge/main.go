@@ -72,7 +72,8 @@ func main() {
 	}
 	logger.Info("secure bootstrap ready", "admin_created", boot.AdminCreated, "master_key_created", boot.MasterKeyCreated)
 	verifier := auth.Verifier{Lookup: gateway.LookupClient, Tolerance: cfg.Auth.TimestampTolerance}
-	handler := httpapi.New(httpapi.Config{Database: database, Verifier: verifier, Admin: adminUI, ResolveTargets: gateway.ResolveTargets, IsSilenced: gateway.IsSilenced, NonceRetention: cfg.Auth.NonceRetention, DedupeWindow: cfg.Dedupe.Window, BodyLimitBytes: cfg.Server.BodyLimitBytes, Logger: logger})
+	bearerVerifier := auth.BearerVerifier{Lookup: gateway.LookupIngressToken}
+	handler := httpapi.New(httpapi.Config{Database: database, Verifier: verifier, BearerVerifier: bearerVerifier, Admin: adminUI, ResolveTargets: gateway.ResolveTargets, IsSilenced: gateway.IsSilenced, NonceRetention: cfg.Auth.NonceRetention, DedupeWindow: cfg.Dedupe.Window, BodyLimitBytes: cfg.Server.BodyLimitBytes, Logger: logger})
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	deliveryWorker := worker.New(database, nil, worker.Config{PollInterval: cfg.Worker.PollInterval, LeaseDuration: cfg.Worker.LeaseDuration, RetryDelays: cfg.Worker.RetryDelays, MaxAttempts: cfg.Worker.MaxAttempts, Retention: cfg.Database.Retention, SenderFor: gateway.Sender, DisplayLocation: cfg.Display.Location}).WithLogger(logger)
 	go deliveryWorker.Run(ctx)

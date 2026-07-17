@@ -47,11 +47,12 @@ type Manager struct {
 }
 
 type snapshot struct {
-	clients  map[string]auth.Client
-	routes   map[string]map[string][]string
-	senders  map[string]channel.Sender
-	channels map[string]ChannelView
-	silences []store.SilenceRecord
+	clients       map[string]auth.Client
+	ingressTokens map[string]auth.IngressToken
+	routes        map[string]map[string][]string
+	senders       map[string]channel.Sender
+	channels      map[string]ChannelView
+	silences      []store.SilenceRecord
 }
 
 type storedChannelConfig struct {
@@ -78,6 +79,15 @@ type ClientView struct {
 	ID                 string
 	Enabled            bool
 	AllowedRoutes      []string
+	RateLimitPerMinute int
+	UpdatedAt          time.Time
+}
+
+type IngressTokenView struct {
+	ID                 string
+	Enabled            bool
+	RoutingKey         string
+	Severity           string
 	RateLimitPerMinute int
 	UpdatedAt          time.Time
 }
@@ -137,6 +147,10 @@ func (m *Manager) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	tokenRecords, err := m.database.ListIngressTokens(ctx)
+	if err != nil {
+		return err
+	}
 	channelRecords, err := m.database.ListChannels(ctx)
 	if err != nil {
 		return err
@@ -149,7 +163,7 @@ func (m *Manager) Reload(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	next := &snapshot{clients: make(map[string]auth.Client, len(clientRecords)), routes: map[string]map[string][]string{}, senders: make(map[string]channel.Sender), channels: make(map[string]ChannelView), silences: silences}
+	next := &snapshot{clients: make(map[string]auth.Client, len(clientRecords)), ingressTokens: make(map[string]auth.IngressToken, len(tokenRecords)), routes: map[string]map[string][]string{}, senders: make(map[string]channel.Sender), channels: make(map[string]ChannelView), silences: silences}
 	for _, record := range clientRecords {
 		secret, err := m.cipher.Decrypt(record.SecretCipher)
 		if err != nil {
@@ -160,6 +174,15 @@ func (m *Manager) Reload(ctx context.Context) error {
 			routes[route] = struct{}{}
 		}
 		next.clients[record.ID] = auth.Client{ID: record.ID, Secret: secret, Enabled: record.Enabled, AllowedRoutes: routes, RateLimitPerMin: record.RateLimitPerMinute}
+	}
+	for _, record := range tokenRecords {
+		if len(record.TokenHash) != 32 {
+			return fmt.Errorf("ingress token %s has an invalid hash", record.ID)
+		}
+		next.ingressTokens[record.PublicID] = auth.IngressToken{
+			ID: record.ID, PublicID: record.PublicID, SecretHash: append([]byte(nil), record.TokenHash...), Enabled: record.Enabled,
+			RoutingKey: record.RoutingKey, Severity: record.Severity, RateLimitPerMinute: record.RateLimitPerMinute,
+		}
 	}
 	for _, record := range channelRecords {
 		stored, err := m.decryptConfig(record.ConfigCipher)
@@ -192,6 +215,15 @@ func (m *Manager) LookupClient(id string) (auth.Client, bool) {
 	}
 	client, ok := state.clients[id]
 	return client, ok
+}
+
+func (m *Manager) LookupIngressToken(publicID string) (auth.IngressToken, bool) {
+	state := m.state.Load()
+	if state == nil {
+		return auth.IngressToken{}, false
+	}
+	token, ok := state.ingressTokens[publicID]
+	return token, ok
 }
 
 func (m *Manager) ResolveTargets(route, severity string) []string {
@@ -250,6 +282,21 @@ func (m *Manager) Clients() []ClientView {
 	}
 	for _, record := range records {
 		result = append(result, ClientView{ID: record.ID, Enabled: record.Enabled, AllowedRoutes: append([]string(nil), record.AllowedRoutes...), RateLimitPerMinute: record.RateLimitPerMinute, UpdatedAt: record.UpdatedAt})
+	}
+	return result
+}
+
+func (m *Manager) IngressTokens() []IngressTokenView {
+	records, err := m.database.ListIngressTokens(context.Background())
+	if err != nil {
+		return nil
+	}
+	result := make([]IngressTokenView, 0, len(records))
+	for _, record := range records {
+		result = append(result, IngressTokenView{
+			ID: record.ID, Enabled: record.Enabled, RoutingKey: record.RoutingKey, Severity: record.Severity,
+			RateLimitPerMinute: record.RateLimitPerMinute, UpdatedAt: record.UpdatedAt,
+		})
 	}
 	return result
 }
@@ -352,6 +399,73 @@ func (m *Manager) RotateClientSecret(ctx context.Context, id string) (string, er
 
 func (m *Manager) DeleteClient(ctx context.Context, id string) error {
 	if err := m.database.DeleteClient(ctx, id); err != nil {
+		return err
+	}
+	return m.Reload(ctx)
+}
+
+func (m *Manager) CreateIngressToken(ctx context.Context, id string, enabled bool, route, severity string, limit int) (string, error) {
+	if err := m.validateIngressToken(id, route, severity, limit); err != nil {
+		return "", err
+	}
+	if _, err := m.database.GetIngressToken(ctx, id); err == nil {
+		return "", ErrConflict
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return "", err
+	}
+	plain, publicID, tokenHash, err := auth.GenerateBearerToken()
+	if err != nil {
+		return "", err
+	}
+	record := store.IngressTokenRecord{
+		ID: id, PublicID: publicID, TokenHash: tokenHash, Enabled: enabled, RoutingKey: route,
+		Severity: severity, RateLimitPerMinute: limit,
+	}
+	if err := m.database.UpsertIngressToken(ctx, record, time.Now().UTC()); err != nil {
+		return "", err
+	}
+	if err := m.Reload(ctx); err != nil {
+		return "", err
+	}
+	return plain, nil
+}
+
+func (m *Manager) UpdateIngressToken(ctx context.Context, id string, enabled bool, route, severity string, limit int) error {
+	if err := m.validateIngressToken(id, route, severity, limit); err != nil {
+		return err
+	}
+	record, err := m.database.GetIngressToken(ctx, id)
+	if err != nil {
+		return err
+	}
+	record.Enabled, record.RoutingKey, record.Severity, record.RateLimitPerMinute = enabled, route, severity, limit
+	if err := m.database.UpsertIngressToken(ctx, record, time.Now().UTC()); err != nil {
+		return err
+	}
+	return m.Reload(ctx)
+}
+
+func (m *Manager) RotateIngressToken(ctx context.Context, id string) (string, error) {
+	record, err := m.database.GetIngressToken(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	plain, publicID, tokenHash, err := auth.GenerateBearerToken()
+	if err != nil {
+		return "", err
+	}
+	record.PublicID, record.TokenHash = publicID, tokenHash
+	if err := m.database.UpsertIngressToken(ctx, record, time.Now().UTC()); err != nil {
+		return "", err
+	}
+	if err := m.Reload(ctx); err != nil {
+		return "", err
+	}
+	return plain, nil
+}
+
+func (m *Manager) DeleteIngressToken(ctx context.Context, id string) error {
+	if err := m.database.DeleteIngressToken(ctx, id); err != nil {
 		return err
 	}
 	return m.Reload(ctx)
@@ -634,6 +748,23 @@ func validateClient(id string, routes []string, limit int) error {
 	}
 	if limit < 1 || limit > 600 {
 		return errors.New("rate limit must be between 1 and 600")
+	}
+	return nil
+}
+
+func (m *Manager) validateIngressToken(id, route, severity string, limit int) error {
+	if !identifierPattern.MatchString(id) || len(id) > 64 {
+		return errors.New("invalid ingress token id")
+	}
+	if !identifierPattern.MatchString(route) || !validSeverity(severity) {
+		return errors.New("invalid ingress token route or severity")
+	}
+	if limit < 1 || limit > 60 {
+		return errors.New("ingress token rate limit must be between 1 and 60")
+	}
+	state := m.state.Load()
+	if state == nil || len(state.routes[route][severity]) == 0 {
+		return errors.New("ingress token needs an existing route rule")
 	}
 	return nil
 }

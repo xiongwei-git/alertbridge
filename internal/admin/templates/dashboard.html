@@ -8,7 +8,7 @@
   <article class="metric"><span>已发送</span><strong class="metric-success">{{.Stats.Sent}}</strong><small>保留期内累计</small></article>
 </section>
 <section class="panel-grid two">
-  <article class="panel"><div class="panel-heading"><div><p class="eyebrow">CONFIGURATION</p><h2>网关配置</h2></div></div><dl class="summary-list"><div><dt>客户端</dt><dd>{{.Stats.Clients}}</dd></div><div><dt>通知渠道</dt><dd>{{.Stats.Channels}}</dd></div></dl><div class="button-row"><a class="button secondary" href="/admin/clients">管理客户端</a><a class="button secondary" href="/admin/channels">管理渠道</a></div></article>
-  <article class="panel"><div class="panel-heading"><div><p class="eyebrow">OPERATIONS</p><h2>处理建议</h2></div></div><ul class="check-list"><li>死信大于 0 时先检查渠道凭证与网络。</li><li>维护前创建有限时长的静默窗口。</li><li>客户端密钥轮换后立即更新调用方。</li></ul><a class="button primary" href="/admin/deliveries?status=dead">查看死信</a></article>
+  <article class="panel"><div class="panel-heading"><div><p class="eyebrow">CONFIGURATION</p><h2>网关配置</h2></div></div><dl class="summary-list"><div><dt>HMAC 客户端</dt><dd>{{.Stats.Clients}}</dd></div><div><dt>轻量令牌</dt><dd>{{.Stats.IngressTokens}}</dd></div><div><dt>通知渠道</dt><dd>{{.Stats.Channels}}</dd></div></dl><div class="button-row"><a class="button secondary" href="/admin/clients">管理接入凭据</a><a class="button secondary" href="/admin/channels">管理渠道</a></div></article>
+  <article class="panel"><div class="panel-heading"><div><p class="eyebrow">OPERATIONS</p><h2>处理建议</h2></div></div><ul class="check-list"><li>死信大于 0 时先检查渠道凭证与网络。</li><li>维护前创建有限时长的静默窗口。</li><li>接入凭据轮换后立即更新调用方。</li></ul><a class="button primary" href="/admin/deliveries?status=dead">查看死信</a></article>
 </section>
 {{end}}

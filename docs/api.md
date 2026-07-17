@@ -1,12 +1,63 @@
 # AlertBridge v1 API 契约
 
+AlertBridge 提供两种兼容并存的入站方式：
+
+| 接口 | 认证 | 适用场景 |
+| --- | --- | --- |
+| `POST /api/v1/notifications` | Bearer 轻量令牌 | 宝塔自定义消息通道、简单脚本和一次性通知 |
+| `POST /api/v1/events` | HMAC + 时间戳 + Nonce | 幂等重试、可选路由、`firing/resolved` 故障生命周期 |
+
+两种接口都复用相同的路由、静默、持久队列、重试和死信机制。轻量接口是对完整事件接口的补充，不改变已有 HMAC 调用。
+
+## `POST /api/v1/notifications`
+
+轻量接口只需要固定的 Bearer 令牌和标题、正文。令牌在管理后台创建，服务端为它固定来源、路由、级别和分钟限额；调用方不能在正文中覆盖这些权限。
+
+```http
+Authorization: Bearer abt_...
+Content-Type: application/json
+```
+
+```json
+{
+  "title": "宝塔磁盘告警",
+  "message": "根分区使用率超过 90%",
+  "category": "disk",
+  "url": "https://status.example.com/host/1"
+}
+```
+
+字段约束：
+
+- `title`：必填，1–200 个字符，不能包含换行；
+- `message`：必填，1–4000 个字符；
+- `category`：可选，最多 64 个字符，不能包含换行；保存为事件的 `category` 标签；
+- `url`：可选，只接受不带用户信息的绝对 HTTP/HTTPS URL；
+- 正文最大 8 KiB，只接受一个 JSON 对象，未知字段会被拒绝。
+
+服务端生成事件 ID 和 UTC 时间，来源使用令牌名称，状态固定为 `info`，路由和级别使用令牌配置。因此轻量接口不会创建、刷新或关闭“活跃故障”。需要 `firing/resolved`、调用方幂等 ID、防重放或按请求选择路由时，应使用完整事件接口。
+
+成功接收返回 `202 Accepted`，结构与完整事件接口相同。例如：
+
+```json
+{
+  "request_id": "9ac0e2cb4e29da5d92e671d4",
+  "event_record_id": "cc9ef9830ac37f7c218cb01c96391dda",
+  "event_id": "simple-e9049fb4aa34fd33a0f1ded32d5d11ec",
+  "outcome": "queued",
+  "deliveries": 1
+}
+```
+
+令牌是高熵凭据，只在创建或轮换时显示一次，数据库只保存摘要。必须通过 HTTPS 放在 `Authorization` 请求头中；不要把令牌写进 URL、Git、日志或前端代码。每个令牌使用独立的 1–60 次/分钟限流桶，认证成功但正文无效的请求也会计数。
+
 ## `POST /api/v1/events`
 
 成功接收返回 `202 Accepted`。这里的“接收”表示认证、校验、事件记录和投递任务已持久化，不表示外部通知渠道已经收到消息。
 
 必须提供四个 HMAC 请求头：`X-Notify-Client`、`X-Notify-Timestamp`、`X-Notify-Nonce`、`X-Notify-Signature`。签名算法见项目 README。请求体最大 32 KiB，只接受 `application/json`，未知字段会被拒绝。
 
-这是 AlertBridge 唯一的正式入站契约。调用方负责把自身事件映射成下面的统一事件模型，再对实际发送的原始 JSON 字节签名。AlertBridge 不根据第三方产品名称猜测或转换其私有格式。
+这是 AlertBridge 唯一的完整事件生命周期契约。调用方负责把自身事件映射成下面的统一事件模型，再对实际发送的原始 JSON 字节签名。AlertBridge 不根据第三方产品名称猜测或转换其私有格式。
 
 ### 请求
 
@@ -77,8 +128,9 @@
 
 ## 接入原则与迁移
 
-- 外部监控平台、脚本或中间服务统一调用 `POST /api/v1/events`。
-- 如果来源不能生成统一正文和四个签名请求头，应由来源侧插件或独立的可信适配器完成映射与签名。
+- 只需要发送一次性标题和正文的来源，可调用 `POST /api/v1/notifications`。
+- 需要故障生命周期、幂等和防重放的外部监控平台、脚本或中间服务，调用 `POST /api/v1/events`。
+- 如果来源不能生成完整事件和四个签名请求头，也不能安全保存 Bearer 请求头，应由来源侧插件或独立的可信适配器完成接入。
 - 已移除的 `/hooks/*` 路径不再接收或转换消息，迁移期固定返回 `410 Gone` 和 `endpoint_removed`，并在错误消息中指向正式接口。
 
 ## 错误
@@ -98,14 +150,14 @@
 | HTTP | `code` | 含义 |
 | --- | --- | --- |
 | 400 | `invalid_json` | JSON 无效、含未知字段或包含多个值 |
-| 401 | `authentication_failed` | 客户端、签名、时间窗或 Nonce 重放无效 |
+| 401 | `authentication_failed` | Bearer 令牌无效，或 HMAC 客户端、签名、时间窗、Nonce 重放无效 |
 | 403 | `route_forbidden` | 客户端无权使用该逻辑路由 |
 | 413 | `body_too_large` | 正文超过上限 |
 | 415 | `unsupported_media_type` | 不是 JSON |
-| 422 | `invalid_event` | 字段语义不满足契约 |
+| 422 | `invalid_event` / `invalid_notification` | 字段语义不满足对应契约 |
 | 422 | `route_unavailable` | 路由在该级别没有启用渠道 |
-| 429 | `rate_limited` | 客户端分钟限流；响应含 `Retry-After: 60` |
-| 503 | `storage_unavailable` | 事件未可靠持久化，客户端应使用新 Nonce 重试 |
+| 429 | `rate_limited` | 客户端或令牌分钟限流；响应含 `Retry-After: 60` |
+| 503 | `storage_unavailable` / `service_unavailable` | 事件未可靠持久化或服务暂时无法生成安全事件 ID；HMAC 客户端重试时应使用新 Nonce |
 
 ## 健康检查
 

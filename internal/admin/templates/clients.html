@@ -1,6 +1,6 @@
 {{define "content"}}
 <section class="panel">
-  <div class="panel-heading"><div><p class="eyebrow">AUTHENTICATION</p><h2>现有客户端</h2><p>每个调用方使用独立 HMAC 密钥和路由权限。</p></div></div>
+  <div class="panel-heading"><div><p class="eyebrow">AUTHENTICATION</p><h2>现有 HMAC 客户端</h2><p>适合需要防重放、幂等和故障生命周期的完整事件接入。</p></div></div>
   <div class="table-wrap"><table class="data-table client-table"><thead><tr>
     <th>Client ID {{template "help" "调用方的唯一标识，会参与请求签名和日志定位。"}}</th>
     <th>状态 {{template "help" "停用后，该客户端的所有新请求都会被拒绝。"}}</th>
@@ -26,6 +26,35 @@
     <label class="check field-check"><input type="checkbox" name="enabled" checked>创建后立即启用</label>
     <fieldset class="field-group span-two"><legend>允许路由 {{template "help" "决定客户端可以发送哪些类型的告警；至少选择一项。"}}</legend><div class="route-options">{{range .RouteOptions}}<label class="route-choice"><input type="checkbox" name="routes" value="{{.}}"><code>{{.}}</code></label>{{else}}<span class="empty-inline">还没有可选路由，请先前往“路由规则”创建。</span>{{end}}</div></fieldset>
     <div class="form-actions">{{if not .RouteOptions}}<a class="button secondary" href="/admin/routes">先创建路由规则</a>{{else}}<button class="button primary" type="submit">创建并生成密钥</button>{{end}}</div>
+  </form>
+</section>
+<section class="panel">
+  <div class="panel-heading"><div><p class="eyebrow">SIMPLE INGRESS</p><h2>轻量接入令牌</h2><p>每个令牌固定一个路由和级别，只能提交一次性 <code>info</code> 通知；令牌泄露时不会关闭活跃故障或耗尽 HMAC 客户端限额。</p></div></div>
+  <div class="table-wrap"><table class="data-table client-table"><thead><tr>
+    <th>令牌名称 {{template "help" "用于标识来源和日志定位，不是令牌原文。"}}</th>
+    <th>状态</th>
+    <th>固定路由 / 级别 {{template "help" "调用方不能在正文中改变路由和严重程度。"}}</th>
+    <th>每分钟限制 {{template "help" "轻量令牌使用独立限流桶，范围为 1–60 次/分钟。"}}</th>
+    <th>更新时间</th><th>操作</th>
+  </tr></thead><tbody>
+  {{range .IngressTokens}}{{$token := .}}<tr>
+    <td class="client-id-cell" data-label="令牌名称"><code>{{.ID}}</code></td>
+    <td data-label="状态"><label class="client-state"><input form="token-edit-{{.ID}}" type="checkbox" name="enabled" {{if .Enabled}}checked{{end}} aria-label="{{.ID}} 启用状态"><span class="status {{if .Enabled}}status-ok{{else}}status-neutral{{end}}">{{if .Enabled}}启用{{else}}停用{{end}}</span></label></td>
+    <td data-label="固定路由 / 级别"><select form="token-edit-{{.ID}}" name="route_rule" aria-label="{{.ID}} 固定路由和级别">{{range $.Routes}}<option value="{{.RoutingKey}}|{{.Severity}}" {{if and (eq .RoutingKey $token.RoutingKey) (eq .Severity $token.Severity)}}selected{{end}}>{{.RoutingKey}} / {{.Severity}}</option>{{end}}</select></td>
+    <td data-label="每分钟限制"><input form="token-edit-{{.ID}}" class="table-input rate-input" type="number" name="rate_limit" value="{{.RateLimitPerMinute}}" min="1" max="60" aria-label="{{.ID}} 每分钟限制"></td>
+    <td class="nowrap" data-label="更新时间">{{formatTime .UpdatedAt}}</td>
+    <td data-label="操作"><div class="action-row"><form id="token-edit-{{.ID}}" method="post" action="/admin/tokens/action"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="action" value="update"><button class="button small secondary" type="submit">保存</button></form><form method="post" action="/admin/tokens/action"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><button class="button small ghost" name="action" value="rotate" type="submit">轮换令牌</button></form><form method="post" action="/admin/tokens/action"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><button class="button small danger" name="action" value="delete" type="submit">删除</button></form></div></td>
+  </tr>{{else}}<tr><td colspan="6" class="empty">还没有轻量接入令牌</td></tr>{{end}}
+  </tbody></table></div>
+</section>
+<section class="panel compact">
+  <div class="panel-heading"><div><p class="eyebrow">NEW SIMPLE TOKEN</p><h2>创建轻量接入令牌</h2><p>适合宝塔自定义消息通道和只能配置固定 Webhook 的工具。令牌只显示一次，数据库仅保存哈希。</p></div></div>
+  <form method="post" action="/admin/tokens/create" class="form-grid"><input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>令牌名称 {{template "help" "同时作为通知来源，例如 baota-prod；创建后不可直接改名。"}}<input name="id" pattern="[A-Za-z0-9][A-Za-z0-9._:-]*" maxlength="64" placeholder="baota-prod" required></label>
+    <label>固定路由 / 级别 {{template "help" "每个轻量令牌只能使用一条已经配置好的路由矩阵规则。"}}<select name="route_rule" required>{{range .Routes}}<option value="{{.RoutingKey}}|{{.Severity}}">{{.RoutingKey}} / {{.Severity}}</option>{{end}}</select></label>
+    <label>每分钟限制 {{template "help" "建议从 10 次/分钟开始，根据真实告警量调低。"}}<input type="number" name="rate_limit" value="10" min="1" max="60" required></label>
+    <label class="check field-check"><input type="checkbox" name="enabled" checked>创建后立即启用</label>
+    <div class="form-actions">{{if not .Routes}}<a class="button secondary" href="/admin/routes">先创建路由规则</a>{{else}}<button class="button primary" type="submit">创建并生成令牌</button>{{end}}</div>
   </form>
 </section>
 {{end}}
