@@ -27,6 +27,7 @@ AlertBridge 容器
 - 一个解析到 VPS 的域名和有效 TLS 证书；
 - `curl` 和 OpenSSL，用于下载 Compose、生成初始密码和健康检查；
 - 服务器通过 NTP 对时，签名请求默认只接受前后 5 分钟。
+- 已获授权的 ACR 拉取账号与 Registry 密码：当前仓库匿名拉取返回 401，不能仅凭公开源码匿名拉镜像。
 
 不需要克隆仓库，不需要 Go、Git、Redis 或 PostgreSQL。
 
@@ -51,6 +52,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
+  'ALERTBRIDGE_IMAGE=crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com/ted_docker_mirror/ted' \
   'ALERTBRIDGE_IMAGE_TAG=v0.5.1' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
@@ -77,6 +79,14 @@ chmod 600 .env
 `.env` 和 `secrets/admin_password` 都需保留，以便后续 `docker compose up` 重新创建容器。数据库已有管理员后，修改密码文件不会修改后台登录密码。
 
 ## 5. 拉取并启动
+
+先登录公网 Registry（交互式输入密码，不要写进命令参数、`.env` 或容器环境）：
+
+```sh
+docker login crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com -u '<获授权的 Registry 登录名>'
+```
+
+当前主分支 Compose 默认使用公网 ACR；已发布的 `v0.5.1` 等历史 Compose 文件不会重写，所以上文 `.env` 显式设置 `ALERTBRIDGE_IMAGE`，使旧文件也从 ACR 拉取。现有 ACR `v0.5.1` 可继续使用，此次流程改造不发布新镜像。镜像仓库需授权账号访问；公开 GitHub 仓库不等于公开 ACR 拉取权限。
 
 ```sh
 docker compose config
@@ -105,25 +115,24 @@ Compose 默认启用：回环端口、非 root UID 10001、只读根文件系统
 
 服务内部、SQLite 和 API 时间语义保持 UTC。管理后台与通知内容在输出时转换为 `.env` 中的 `ALERTBRIDGE_DISPLAY_TIMEZONE`，默认是 `Asia/Shanghai`。该值必须是 IANA 时区名，例如 `UTC`、`Asia/Shanghai` 或 `America/Los_Angeles`；非法值会阻止服务启动，避免静默显示错误时间。
 
-### 中国内地服务器使用 ACR
+### 阿里云同地域 ECS 使用 VPC 地址（可选）
 
-默认镜像源是 GHCR。若维护者提供了同版本 ACR 镜像，中国内地的阿里云 ECS 可以在 `.env` 增加完整的 VPC 镜像路径：
+CI 推送和通用部署使用公网地址。只有能够访问该实例内网端点的阿里云同地域 ECS 才应将 `.env` 中已有的 `ALERTBRIDGE_IMAGE` 一行替换为：不要重复追加同名变量，不要将 VPC 地址用于普通 VPS、本机或 GitHub 托管 Runner。
 
 ```sh
-printf '%s\n' \
-  'ALERTBRIDGE_IMAGE=<ACR VPC 域名>/<命名空间>/<仓库名>' >> .env
+ALERTBRIDGE_IMAGE=crpi-2q1p9uwje81xbddu-vpc.cn-shanghai.personal.cr.aliyuncs.com/ted_docker_mirror/ted
 ```
 
-首次使用私有 ACR 仓库时，登录一次对应的 VPC Registry。命令会交互式询问密码，不要把密码直接写在命令参数或 `.env` 中：
+首次改用 VPC 地址时，需另行登录对应的 VPC Registry（公网登录不会自动替代 VPC 登录）：
 
 ```sh
-docker login <ACR VPC 域名> -u '<Registry 登录名>'
+docker login crpi-2q1p9uwje81xbddu-vpc.cn-shanghai.personal.cr.aliyuncs.com -u '<获授权的 Registry 登录名>'
 docker compose config
 docker compose pull
 docker compose up -d
 ```
 
-`ALERTBRIDGE_IMAGE` 只改变镜像仓库，升级与回滚仍然只修改 `ALERTBRIDGE_IMAGE_TAG`。ACR 是国内部署镜像，GHCR 仍是官方版本和发布来源。ACR 复制并核验 GHCR 的原始 AMD64/ARM64 平台摘要；因 ACR 不支持新版证明文件格式，来源证明保留在 GHCR，镜像索引摘要可以不同。
+`ALERTBRIDGE_IMAGE` 仍可覆盖镜像地址，升级与回滚仍然只修改 `ALERTBRIDGE_IMAGE_TAG`。ACR 是唯一镜像发布源，未来版本不再发布 GHCR、也不再从 GHCR 复制；旧 GHCR 镜像不删除。GitHub Actions 一次构建两种架构并生成 SBOM/来源证明，验证每个平台及证明的摘要绑定后，直接将本地构建的运行镜像上传 ACR，逐个标签核验索引摘要。当前个人版仓库实际拒绝了证明格式，因此证明文件保存为 GitHub Actions `release-evidence-vX.Y.Z` 产物（90 天），由 GitHub artifact attestation 签证。长期审计应及时下载归档，见 [ADR-014](decisions/ADR-014-acr-only-image-publishing.md)。
 
 ## 6. 宝塔 HTTPS 反向代理
 
@@ -363,7 +372,7 @@ docker run --rm \
 | 422 route_unavailable | 该路由与级别是否绑定已启用渠道 |
 | 测试后活跃故障未关闭 | 用相同客户端、路由和去重键发送 resolved；普通测试使用 test |
 | 飞书 19024 | 后台关键词需匹配机器人要求 |
-| 镜像拉取失败 | 已发布完整版本、GHCR 连通性；ACR 另查登录与仓库权限 |
+| 镜像拉取失败 | ACR 对应端点登录、仓库拉取权限、已发布完整版本与网络；VPC 仅适用于可达该内网的 ECS |
 | 时间显示错误 | IANA 时区配置；不修改服务器时钟补偿展示时差 |
 
 ## 可选 Tinyauth OIDC 统一登录

@@ -17,7 +17,7 @@
 - The `alertbridge-data` and `alertbridge-secrets` volumes are a recovery pair and must be backed up and restored together. Never silently regenerate a missing master key for an initialized database.
 - The administrator bootstrap password must enter through a file-backed Compose Secret below a host `0700` directory, never the service environment. Environment-sourced Compose Secrets are incompatible with the read-only service rootfs; see ADR-005. Only the Argon2id hash is stored in SQLite.
 - Keep Docker non-root, read-only, capability-free, resource-limited, and loopback-bound.
-- Keep GHCR as the only official image registry. The optional authenticated ACR deployment mirror only copies the GHCR digest and is not a second release authority; see ADR-007. Pin third-party Actions to full commit SHAs and limit package write permissions to the release publishing job.
+- Keep ACR as the only official image registry; see ADR-014 (supersedes ADR-004/007). Build in GitHub Actions and upload directly to the public ACR endpoint, never through GHCR. The VPC endpoint is an explicit deployment override, not the general default. Require authenticated pulls; preserve and validate per-platform SBOM/provenance as GitHub artifacts when ACR cannot host attestations. Pin third-party Actions to full commit SHAs; grant attestations/id-token write only to the release publishing job, with no package write permission.
 
 ## Verification
 

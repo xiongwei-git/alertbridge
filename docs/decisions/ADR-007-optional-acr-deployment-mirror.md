@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-014](ADR-014-acr-only-image-publishing.md) on 2026-10-17. The following describes the historical mirror design, not the current publishing policy.
 
 Amended 2026-10-17 after ACR rejected the OCI empty-config attestation format.
 

@@ -59,7 +59,13 @@ curl -fsSLo compose.yaml \
 
 按 [部署指南](docs/deployment.md) 创建 `.env` 和文件型管理员 Secret，将 `ALERTBRIDGE_IMAGE_TAG` 固定为 `v0.5.1`，再启动服务。基础部署使用密码登录；OIDC 另需同版本 `compose.oidc.yaml`、身份提供方和受限配置文件。
 
-应用只绑定 `127.0.0.1:18080`，由 Nginx 提供 HTTPS。官方镜像为 `ghcr.io/xiongwei-git/alertbridge`，支持 `linux/amd64` 与 `linux/arm64`。ACR 是可选部署镜像，不是独立发布来源。
+应用只绑定 `127.0.0.1:18080`，由 Nginx 提供 HTTPS。唯一镜像发布源改为阿里云 ACR，支持 `linux/amd64` 与 `linux/arm64`：
+
+```text
+crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com/ted_docker_mirror/ted
+```
+
+当前仓库拉取需要授权账号及 `docker login`，不支持匿名部署。现有 `v0.5.1` 镜像已在 ACR；旧版本 Compose 不会重写，请按[部署指南](docs/deployment.md)在 `.env` 明确设置 `ALERTBRIDGE_IMAGE`。后续版本直接构建并发布到 ACR，不再发布 GHCR 或执行跨仓库复制；历史 GHCR 镜像保留。公网地址用于 CI 和通用部署，阿里云同地域 ECS 可显式选择 VPC 地址。SBOM 与来源证明保留并签证为 GitHub 构建产物，见 [ADR-014](docs/decisions/ADR-014-acr-only-image-publishing.md)。此次流程调整不代表发布了新版本。
 
 ## 接入接口
 

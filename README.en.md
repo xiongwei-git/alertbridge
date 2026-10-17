@@ -2,7 +2,7 @@
 
 AlertBridge is a single-instance notification gateway written in Go with SQLite. It accepts authenticated HTTP events, routes them to Feishu, Telegram, ntfy or TLS SMTP, and records events, incidents and delivery attempts.
 
-[中文](README.md) · [Website and simulated demo](https://opensource.tedxiong.com/alertbridge/) · [Deployment](docs/deployment.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md)
+[中文](README.md) · [Website and simulated demo](https://opensource.tedxiong.com/alertbridge/) · [Deployment](docs/deployment.en.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md)
 
 Current release: **v0.5.1**. The public introduction at `/` is embedded in the service and Docker image, with no separate static Nginx setup. Optional administrator OIDC, notification APIs, MCP authorization and business data formats remain unchanged.
 
@@ -32,11 +32,13 @@ The [browser demo](https://opensource.tedxiong.com/alertbridge/#demo) uses ficti
 
 ## Deploy
 
-Use the official `ghcr.io/xiongwei-git/alertbridge:v0.5.1` image and matching versioned Compose files. Follow the [deployment guide](docs/deployment.md) for file-backed bootstrap credentials and HTTPS reverse proxy setup. Bind the application to loopback only. Back up the database and master-key volumes together.
+ACR is the only image publication source: `crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com/ted_docker_mirror/ted`. Both AMD64 and ARM64 are built together. Pulls require an authorized registry account and `docker login`; anonymous pulls are not available. Existing v0.5.1 is already present in ACR. Use matching versioned Compose files and explicitly set `ALERTBRIDGE_IMAGE` for older Compose files that still default to GHCR. Follow the [English deployment guide](docs/deployment.en.md) for login, public versus VPC endpoints, file-backed bootstrap credentials and HTTPS setup. Bind the application to loopback only. Back up the database and master-key volumes together.
+
+Future version tags publish directly to ACR, with no GHCR publication or registry-to-registry copy. Historical GHCR images are retained. Validated per-platform SBOM/provenance and signed workflow attestations remain on GitHub; see [ADR-014](docs/decisions/ADR-014-acr-only-image-publishing.md). This workflow change does not create a new release.
 
 OIDC is optional and has been tested with Tinyauth. It requires the versioned `compose.oidc.yaml` overlay and a restricted server-side JSON Secret. Keep the overlay active for all Compose operations, and back up its configuration separately. Administrator OIDC and MCP OAuth are separate flows: provider tokens are not issued to agents. Logout clears only the local application session.
 
-Detailed operational documentation is currently in Chinese.
+The [Chinese operations guide](docs/deployment.md) covers additional backup, recovery and troubleshooting detail.
 
 ## Interfaces
 

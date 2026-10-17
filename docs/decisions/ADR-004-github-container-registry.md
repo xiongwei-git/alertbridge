@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-014](ADR-014-acr-only-image-publishing.md) on 2026-10-17. The decision below is historical; new releases publish only to ACR. Existing GHCR images are retained.
 
 ## Date
 

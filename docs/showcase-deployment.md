@@ -5,7 +5,7 @@
 - 项目集合：<https://opensource.tedxiong.com/>
 - AlertBridge：<https://opensource.tedxiong.com/alertbridge/>
 
-网站由宝塔 Nginx 直接提供静态文件，不运行 Go 服务、不反向代理通知 API。GitHub 仅保存源码、执行 CI 和发布 GHCR 镜像；GitHub Pages 已停止使用。
+网站由宝塔 Nginx 直接提供静态文件，不运行 Go 服务、不反向代理通知 API。GitHub 保存源码、执行 CI 并构建镜像，镜像仅发布到 ACR；GitHub Pages 已停止使用。
 
 ## 构建与本地预览
 

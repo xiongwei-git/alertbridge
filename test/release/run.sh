@@ -35,6 +35,7 @@ require_file "$e2e_script"
 require_file "$project_dir/compose.build.yaml"
 require_file "$project_dir/docs/decisions/ADR-004-github-container-registry.md"
 require_file "$project_dir/docs/decisions/ADR-007-optional-acr-deployment-mirror.md"
+require_file "$project_dir/docs/decisions/ADR-014-acr-only-image-publishing.md"
 require_file "$project_dir/VERSION"
 if ! grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' "$project_dir/VERSION"; then
   printf 'VERSION must contain one semantic version such as v0.2.0\n' >&2
@@ -47,7 +48,7 @@ printf '%s\n' 'release-check-password' > "$secret_file"
 chmod 644 "$secret_file"
 
 ALERTBRIDGE_ADMIN_PASSWORD_FILE="$secret_file" ALERTBRIDGE_IMAGE_TAG=v9.8.7 docker compose -f "$project_dir/compose.yaml" config > "$prod_compose"
-require_match 'image: ghcr\.io/xiongwei-git/alertbridge:v9\.8\.7' "$prod_compose"
+require_match 'image: crpi-2q1p9uwje81xbddu\.cn-shanghai\.personal\.cr\.aliyuncs\.com/ted_docker_mirror/ted:v9\.8\.7' "$prod_compose"
 require_match 'file: .*/secrets/admin_password' "$prod_compose"
 require_match 'target: /run/secrets/admin_password' "$prod_compose"
 require_match 'target: /var/lib/alertbridge-secrets' "$prod_compose"
@@ -76,7 +77,7 @@ printf '%s\n' \
   'ALERTBRIDGE_IMAGE_TAG=v9.8.7' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' > "$env_project/.env"
 (cd "$env_project" && docker compose config) > "$env_compose"
-require_match 'image: ghcr\.io/xiongwei-git/alertbridge:v9\.8\.7' "$env_compose"
+require_match 'image: crpi-2q1p9uwje81xbddu\.cn-shanghai\.personal\.cr\.aliyuncs\.com/ted_docker_mirror/ted:v9\.8\.7' "$env_compose"
 if grep -Fq 'release-check-password' "$env_compose"; then
   printf 'Compose rendered the bootstrap password into service metadata\n' >&2
   exit 1
@@ -106,18 +107,25 @@ require_match 'go vet ./\.\.\.' "$ci_workflow"
 require_match '\./test/e2e/run\.sh' "$ci_workflow"
 
 require_match "tags: \['v\*\.\*\.\*'\]" "$release_workflow"
-require_match 'packages: write' "$release_workflow"
 require_match 'attestations: write' "$release_workflow"
 require_match 'id-token: write' "$release_workflow"
-require_match 'REGISTRY: ghcr\.io' "$release_workflow"
-require_match 'IMAGE_NAME: \$\{\{ github\.repository \}\}' "$release_workflow"
 require_match 'ACR_IMAGE: \$\{\{ vars\.ACR_IMAGE \}\}' "$release_workflow"
 require_match 'ACR_USERNAME: \$\{\{ vars\.ACR_USERNAME \}\}' "$release_workflow"
 require_match 'ACR_PASSWORD: \$\{\{ secrets\.ACR_PASSWORD \}\}' "$release_workflow"
-require_match 'docker buildx imagetools create' "$release_workflow"
-require_match 'needs\.publish\.outputs\.digest' "$release_workflow"
-require_match 'diff -u expected.json actual.json' "$release_workflow"
-require_match 'workflow_dispatch:' "$release_workflow"
+require_match 'needs: verify' "$release_workflow"
+require_match 'skopeo copy --all --preserve-digests' "$release_workflow"
+require_match 'release-evidence.py prepare' "$release_workflow"
+require_match 'release-evidence.py verify' "$release_workflow"
+require_match 'provenance: mode=max' "$release_workflow"
+require_match 'sbom: true' "$release_workflow"
+require_match 'push-to-registry: false' "$release_workflow"
+require_match 'uses: actions/upload-artifact@[0-9a-f]{40}' "$release_workflow"
+require_match 'if-no-files-found: error' "$release_workflow"
+if grep -En 'ghcr\.io|mirror-acr|packages:|workflow_dispatch:|continue-on-error:|provenance: false|sbom: false' "$release_workflow"; then
+  printf 'release must fail closed, publish only to ACR on tags, and preserve evidence\n' >&2
+  exit 1
+fi
+python3 "$project_dir/test/release/test_evidence.py"
 require_match 'linux/amd64,linux/arm64' "$release_workflow"
 require_match 'type=semver,pattern=\{\{raw\}\}' "$release_workflow"
 require_match 'type=semver,pattern=v\{\{major\}\}\.\{\{minor\}\}' "$release_workflow"
@@ -151,4 +159,4 @@ if [ -n "$bad_uses" ]; then
   exit 1
 fi
 
-printf 'Release configuration checks passed: repository-free GHCR deployment, optional ACR mirror, Compose secret bootstrap, isolated persistent key volume, pinned actions, least privilege, and multi-architecture publishing.\n'
+printf 'Release configuration checks passed: ACR-only authenticated publishing, validated build evidence, image override, Compose secrets, pinned actions, least privilege, and multi-architecture publishing.\n'
