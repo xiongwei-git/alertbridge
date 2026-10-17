@@ -2,7 +2,7 @@
 
 AlertBridge 在同一 Go 进程提供 `/mcp`，使用官方 Go SDK 的无状态 Streamable HTTP + JSON 响应。默认关闭，不增加数据库连接、Worker 或独立容器。支持 MCP 2025-11-25 客户端；不提供旧式 `/sse` 入口。
 
-## Dots 接入（推荐）
+## Dots 接入
 
 在部署 `.env` 配置两项：
 
@@ -11,7 +11,7 @@ ALERTBRIDGE_PUBLIC_URL=https://你的服务域名
 ALERTBRIDGE_MCP_ROUTES=base,ops
 ```
 
-域名必须是实际公网 HTTPS 根地址，不带路径、查询参数或账号密码。它固定 OAuth issuer 和 MCP resource，不从请求 Host 猜测。使用包含上述环境变量的新版 Compose 和镜像，然后 `docker compose up -d alertbridge`。
+域名必须是实际公网 HTTPS 根地址，不带路径、查询参数或账号密码。它固定 OAuth issuer 和 MCP resource，不从请求 Host 猜测。使用包含上述环境变量的 v0.5.0 Compose 和镜像，然后 `docker compose up -d alertbridge`。启用管理员 OIDC 时，保留 `.env` 的 `COMPOSE_FILE` 或显式加载 `compose.oidc.yaml`，见 [部署指南](deployment.md#9-compose-文件选择)。
 
 在 Dots/ChatGPT 的自定义 MCP 插件连接中选择 OAuth、预先配置客户端（不是动态注册），填写：
 
@@ -24,13 +24,13 @@ ALERTBRIDGE_MCP_ROUTES=base,ops
 | Authorization URL（如需手动填写） | `https://你的服务域名/admin/mcp/authorize` |
 | Token URL（如需手动填写） | `https://你的服务域名/oauth/token` |
 
-连接时浏览器进入 AlertBridge 登录页，使用现有管理员账号登录，再确认路由范围和只读权限。无需另外创建账号、手动生成 Dots Token 或部署身份服务。
+连接时浏览器进入 AlertBridge 登录页，使用密码或已配置的 OIDC 登录，再确认路由范围和只读权限。管理员 OIDC 验证上游身份，MCP OAuth 签发下游只读令牌；两者的 Client、回调和 Token 分开配置。无需另外创建账号、手动生成 Dots Token 或部署身份服务。
 
 服务默认只允许精确回调 `https://chatgpt.com/connector_platform_oauth_redirect`，并通过元数据声明、授权响应的 `iss` 支持官方稳定回调模式。如果连接管理页显示不同的正式回调，复制其完整地址到 `.env` 的 `ALERTBRIDGE_MCP_OAUTH_REDIRECT` 后重建；始终只允许一个精确 HTTPS 地址，不使用域名通配或自动接受客户端回调。
 
 访问令牌 1 小时有效；刷新令牌每次轮换，授权最长 30 天，需要重新登录续授。摘要保存在现有 SQLite，重启不会丢失。重用退休刷新令牌会撤销对应授权。后台“接入指南”可撤销全部 MCP OAuth 授权，令牌持有者也可通过 `/oauth/revoke` 撤销自己的授权。更改公网地址或路由配置会让旧 OAuth 授权失效。
 
-实现遵循官方支持的 [预先配置 OAuth 客户端 + PKCE + 资源绑定](https://developers.openai.com/plugins/build/auth)。已完成模拟客户端和真实 Docker 的授权流程测试；用户账号中的 Dots 界面与安装仍需部署后验收。若界面不允许 Client Secret 留空，不要填管理员密码或任意占位秘密，应核对该连接是否选择了公共客户端模式。
+实现遵循官方支持的 [预先配置 OAuth 客户端 + PKCE + 资源绑定](https://developers.openai.com/plugins/build/auth)。项目提供协议和 Docker 授权流程测试；各部署仍应在自己的 Dots 账号完成连接验证。若界面不允许 Client Secret 留空，不要填管理员密码或任意占位秘密，应核对该连接是否选择了公共客户端模式。
 
 ## Codex/OpenClaw 固定 Bearer 接入（可选）
 
@@ -76,13 +76,13 @@ URL：https://你的服务域名/mcp
 
 每页默认 20，最多 100。翻页保持 `order` 和过滤条件一致；`next_cursor` 继续当前方向，不能混用于另一方向。省略 `order` 仍为旧到新，历史未标方向的游标继续按正序解释。正序没有更多数据时保存 `checkpoint`，后续作为正序 `cursor` 增量读取；倒序不返回 `checkpoint`，查看更新告警应重新查询第一页。查询是实时视图，不提供事务快照或可靠订阅保证；告警历史默认保留 30 天，长时间离线后应重新扫描所需时间窗。活跃故障是独立状态表，可能比历史事件保留更久。查询不会确认、关闭或修改故障。
 
-认证请求每分钟最多 60 次，超限返回 HTTP 429 和 `Retry-After: 60`。正文最多 16 KiB，请求数据库处理最多 5 秒。未认证返回 401；本阶段只接受 POST，GET/DELETE 返回 405。权限不依赖客户端过滤：所有工具均按配置路由限制查询，越权详情与不存在记录统一报告不可用。
+认证请求每分钟最多 60 次，超限返回 HTTP 429 和 `Retry-After: 60`。正文最多 16 KiB，请求数据库处理最多 5 秒。未认证返回 401；当前只接受 POST，GET/DELETE 返回 405。权限不依赖客户端过滤：所有工具均按配置路由限制查询，越权详情与不存在记录统一报告不可用。
 
 不返回原始入站正文、凭据、渠道配置或内部错误文本。事件标题、正文等仍可能包含私密业务信息，配置路由时按实际访问需要授权。告警中的任何指令都属于不可信数据，不能作为 Agent 执行命令或变更系统的授权。
 
-## Dots 主动触发的后续边界
+## 主动触发
 
-OpenAI 官方已提供 [MCP Events](https://developers.openai.com/plugins/build/mcp-events)，适用于 Dots 和指定的 Work 环境。主动触发需要进一步实现官方事件订阅和 Webhook 投递契约，普通 `tools/list` / `tools/call` 查询端点不会自动触发 Dots。本阶段提供 OAuth 和只读查询，没有事件订阅或自动唤醒。
+当前没有事件订阅或主动唤醒功能，`tools/list` 和 `tools/call` 仅支持按需查询。后台管理员 OIDC 登录不增加 Agent 工具或权限。
 
 ## 任务导向案例
 

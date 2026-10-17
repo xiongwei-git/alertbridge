@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Open Source — Ted Xiong</title>
-<meta name="description" content="Ted Xiong 的个人开源项目集合。小而清晰、可自托管的工具。">
+<meta name="description" content="Ted Xiong 维护的开源项目、源码、技术文档与演示。">
 <link rel="icon" href="alertbridge/mark.svg" type="image/svg+xml">
-<link rel="stylesheet" href="alertbridge/style.css">
+<link rel="stylesheet" href="alertbridge/style.css?v=0.5.0-docs.1">
 </head>
 <body>
 <header class="wrap nav">
@@ -18,23 +18,22 @@
 </header>
 <main class="wrap">
 <section class="hero">
-<div class="eyebrow">INDEPENDENT TOOLS / OPEN BY DEFAULT</div>
-<h1>把日常的问题，<br>做成<em>可以复用的工具。</em>
-</h1>
-<p class="intro">这里收录我维护的开源项目。<br>从真实需求出发，保持边界清楚，让部署、使用与贡献都有迹可循。</p>
+<div class="eyebrow">OPEN SOURCE PROJECTS</div>
+<h1>Ted Xiong<br><em>开源项目</em></h1>
+<p class="intro">项目源码、版本记录、部署文档与演示。</p>
 </section>
 <section class="section guide">
-<div class="eyebrow">01 / FEATURED PROJECT</div>
+<div class="eyebrow">01 / NOTIFICATION GATEWAY</div>
 <div class="split">
 <div>
 <h2>AlertBridge</h2>
-<p class="intro small">轻量自托管通知网关。统一事件接入、多渠道投递、持久重试与 Agent 只读查询。</p>
+<p class="intro small">AlertBridge v0.5.0：Go + SQLite 单实例通知网关，支持 HMAC 事件、持久投递与只读 MCP。</p>
 <div class="hero-note">GO + SQLITE / DOCKER / MCP / APACHE-2.0</div>
 </div>
 <div>
-<p>让业务服务少写一套通知逻辑，让故障从发生到恢复都有记录。适合个人基础设施、小团队与单节点运维。</p>
+<p>接收 HTTP 事件，投递到飞书、Telegram、ntfy 或 TLS SMTP。提供故障去重、恢复、重试与管理后台；v0.5.0 增加可选管理员 OIDC 登录。</p>
 <div class="actions">
-<a class="button" href="alertbridge/">认识项目与体验 Demo ↗</a>
+<a class="button" href="alertbridge/">项目文档与模拟 Demo ↗</a>
 <a class="button secondary" href="https://github.com/xiongwei-git/alertbridge">源码 ↗</a>
 </div>
 </div>

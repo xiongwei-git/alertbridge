@@ -1,13 +1,13 @@
-# Dots：从“有没有告警”到“查看投递证据”
+# Dots 只读告警查询示例
 
 这是使用现有只读 MCP 的接入案例，不需要 OpenAI API Key。协议配置见 [MCP 指南](mcp.md)。Dots/ChatGPT 的产品入口、权限和可用性取决于实际账号，不承诺所有账号可安装。
 
 ## 准备数据与授权
 
 1. 先在自己的隔离环境运行 [Python 示例](../examples/python/README.md)，确认测试告警及投递记录可见。不要为了演示导入生产数据库。
-2. 将 MCP 路由范围限定为示例路由，例如 `ops`；通过 HTTPS 部署并按 [OAuth 配置](mcp.md#dots-接入推荐) 连接。不要把本机 HTTP Demo 暴露到公网以绕过 TLS。
+2. 将 MCP 路由范围限定为示例路由，例如 `ops`；通过 HTTPS 部署并按 [OAuth 配置](mcp.md#dots-接入) 连接。不要把本机 HTTP Demo 暴露到公网以绕过 TLS。
 3. 连接信息：MCP URL 为 `https://你的服务域名/mcp`；Client ID 为 `alertbridge-dots`，Client Secret 留空，Scope 为 `alerts:read`，PKCE 使用 S256。
-4. 使用 AlertBridge 管理员账号登录授权页，核对允许读取的路由。OAuth access/refresh token 无需手动复制到对话中。
+4. 使用 AlertBridge 密码或已配置的 OIDC 登录授权页，核对允许读取的路由。OAuth access/refresh token 无需手动复制到对话中。
 
 公共客户端、预配置 OAuth 与精确回调遵循 [OpenAI 官方认证文档](https://developers.openai.com/plugins/build/auth)，核对日期 2026-10-17。实际界面若要求其他正式回调，按 MCP 指南配置单个精确地址，不放宽通配。
 
