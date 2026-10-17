@@ -1,0 +1,21 @@
+name: Bug report
+description: 可复现的问题（安全漏洞请使用私密报告）
+body:
+  - type: input
+    id: version
+    attributes:
+      label: AlertBridge 版本与运行环境
+      placeholder: v0.4.2 / Docker / amd64
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤、预期与实际结果
+      description: 请使用虚构数据，不提交 Token、数据库或私密 URL。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏日志与最小案例

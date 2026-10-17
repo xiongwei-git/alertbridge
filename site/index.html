@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="AlertBridge：轻量自托管通知网关，让服务统一发出消息，让 Agent 安全读取告警。">
+<title>AlertBridge — 把通知接起来</title>
+<link rel="icon" href="mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script src="demo.js" defer>
+</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="wrap nav">
+<a class="brand" href="./">
+<img src="mark.svg" alt="" width="30" height="30">AlertBridge<span class="tag">OPEN SOURCE</span>
+</a>
+<nav aria-label="主导航">
+<a href="../">项目集合</a>
+<a href="#demo">交互演示</a>
+<a href="#start">开始使用</a>
+<a href="#agents">Dots / MCP</a>
+<a href="https://github.com/xiongwei-git/alertbridge">GitHub ↗</a>
+</nav>
+</header>
+<main id="main">
+<section class="wrap hero">
+<div class="eyebrow">SELF-HOSTED · GO + SQLITE · APACHE-2.0</div>
+<h1>服务各司其职。<br>通知，<em>交给一座桥。</em>
+</h1>
+<p class="intro">把分散在脚本里的通知逻辑，收进一个轻量网关。<br>统一接入、可靠排队、多渠道投递，再让 Agent 读懂发生了什么。</p>
+<div class="actions">
+<a class="button" href="#demo">亲手走一遍流程 <span>↓</span>
+</a>
+<a class="button secondary" href="#start">部署自己的网关 ↗</a>
+</div>
+<div class="hero-note">一个进程 · 一份 SQLite · 一个持久投递 Worker</div>
+<div class="bridge" aria-label="业务服务通过 AlertBridge 发送到通知渠道，Agent 只读查询">
+<div>
+<small>YOUR SERVICES</small>
+<strong>监控 / 脚本 / 自动化</strong>
+<span>HMAC 事件 · Bearer 通知</span>
+</div>
+<span class="arrow" aria-hidden="true">→</span>
+<div class="bridge-core">
+<small>ONE BRIDGE</small>
+<strong>AlertBridge</strong>
+<span>认证 · 路由 · 去重 · 重试</span>
+</div>
+<span class="arrow" aria-hidden="true">→</span>
+<div>
+<small>YOUR CHANNELS</small>
+<strong>飞书 / Telegram</strong>
+<span>ntfy / TLS SMTP</span>
+</div>
+</div>
+<div class="agent-line">Agent ← 按路由授权的只读 MCP ← AlertBridge</div>
+</section>
+<section class="band">
+<div class="wrap reasons">
+<article>
+<span class="number">01 / LESS GLUE</span>
+<h2>每个服务，少写一套通知。</h2>
+<p>业务只描述发生了什么。渠道密钥、投递路由与失败重试，集中在网关管理。</p>
+</article>
+<article>
+<span class="number">02 / MORE EVIDENCE</span>
+<h2>入队之后，仍有迹可循。</h2>
+<p>区分已接收、等待投递与实际送达。查看尝试次数和死信，追踪故障发生与恢复。</p>
+</article>
+<article>
+<span class="number">03 / YOUR CONTROL</span>
+<h2>数据留在自己的服务里。</h2>
+<p>单实例自托管，服务端渲染后台。Agent 只读取指定路由的告警，不修改故障。</p>
+</article>
+</div>
+</section>
+<section class="wrap section" id="demo">
+<div class="section-heading">
+<div>
+<div class="eyebrow">TRY THE FLOW</div>
+<h2>从发生，到恢复。</h2>
+</div>
+<p>浏览器内模拟 · 虚构数据 · 不发送真实通知<br>真实认证、持久化和重试请用 Docker Demo 验证。</p>
+</div>
+<div class="console">
+<div class="console-bar">
+<span>
+<i class="dot">
+</i> 交互演示 / ops-demo</span>
+<button class="text-button" id="reset" type="button">重置演示 ↺</button>
+</div>
+<div class="demo-body">
+<div class="demo-controls">
+<span class="number">模拟事件</span>
+<h3>一台服务器的磁盘告警</h3>
+<p>依次体验故障、重复上报与恢复，看看网关如何维护同一个故障。</p>
+<button id="fire" type="button">1. 发生故障 <code>firing</code>
+</button>
+<button id="repeat" type="button" disabled>2. 重复上报 <code>firing</code>
+</button>
+<button id="resolve" type="button" disabled>3. 故障恢复 <code>resolved</code>
+</button>
+<div class="demo-footnote">固定演示路由：ops<br>渠道：飞书（模拟）<br>去重键：demo-disk</div>
+</div>
+<div class="demo-output">
+<div class="metrics">
+<div>
+<span>活跃故障</span>
+<strong id="active">0</strong>
+</div>
+<div>
+<span>接收事件</span>
+<strong id="received">0</strong>
+</div>
+<div>
+<span>模拟通知</span>
+<strong id="delivered">0</strong>
+</div>
+</div>
+<p class="state" id="state" role="status" aria-live="polite">等待第一条事件。点击“发生故障”开始。</p>
+<ol id="timeline" class="timeline">
+<li class="empty">这里将展示事件与模拟投递的变化。</li>
+</ol>
+<details>
+<summary>查看最近一次模拟请求</summary>
+<pre id="payload">尚无请求；本页面不会调用 API。</pre>
+</details>
+</div>
+</div>
+<div class="agent-demo">
+<div>
+<span class="number">READ-ONLY AGENT</span>
+<h3>“最近发生了什么？”</h3>
+<p>演示如何按接收时间倒序读取最近 10 条。</p>
+</div>
+<div>
+<button id="query" class="button secondary" type="button">模拟 list_alerts 查询</button>
+<pre id="agent-result" aria-live="polite">参数：{"order":"desc","limit":10}
+等待查询演示数据。</pre>
+</div>
+</div>
+</div>
+<noscript>
+<p>交互演示需要 JavaScript。也可阅读下方能力说明或运行本地 Docker Demo。</p>
+</noscript>
+</section>
+<section class="wrap section" id="start">
+<div class="eyebrow">TWO WAYS TO START</div>
+<h2>先试用，再接入自己的服务。</h2>
+<div class="split">
+<article class="guide">
+<span class="number">01 / LOCAL EXPERIENCE</span>
+<h3>运行真实的本地后台</h3>
+<p>需要 Docker Compose、OpenSSL 和 curl。临时凭据由脚本生成；在空后台配置渠道、路由和客户端。</p>
+<pre>git clone https://github.com/xiongwei-git/alertbridge.git
+cd alertbridge
+./scripts/local-demo.sh up</pre>
+<p class="muted">打开 http://127.0.0.1:18081/admin/<br>本地 HTTP 环境仅供测试，不要暴露到公网。</p>
+</article>
+<article class="guide">
+<span class="number">02 / YOUR INFRASTRUCTURE</span>
+<h3>部署你的通知中枢</h3>
+<p>使用官方 GHCR 镜像与 Docker Compose。应用绑定 loopback，由 Nginx 提供 HTTPS。数据库与主密钥卷成对备份。</p>
+<div class="link-list">
+<a href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/deployment.md">生产部署与恢复指南 ↗</a>
+<a href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/api.md">完整事件与轻量通知契约 ↗</a>
+<a href="https://github.com/xiongwei-git/alertbridge/tree/main/examples/python">Python HMAC 接入示例 ↗</a>
+</div>
+</article>
+</div>
+</section>
+<section class="band" id="agents">
+<div class="wrap section split">
+<div>
+<div class="eyebrow">BRING YOUR AGENT</div>
+<h2>Dots 读事实，<br>你保留控制权。</h2>
+<p class="intro small">用 OAuth + PKCE 授权，让 Agent 查询指定路由的历史告警、投递详情和活跃故障。</p>
+<a class="button" href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/dots-example.md">按示例连接 Dots ↗</a>
+</div>
+<div class="agent-card">
+<span class="number">THREE TOOLS. READ ONLY.</span>
+<dl>
+<dt>list_alerts</dt>
+<dd>最近告警、按来源筛选、游标分页</dd>
+<dt>get_alert</dt>
+<dd>事件详情、投递状态与尝试记录</dd>
+<dt>list_active_incidents</dt>
+<dd>当前尚未恢复的故障</dd>
+</dl>
+<p>不确认或关闭故障，不执行系统命令，不自动唤醒 Agent。账号可用性与连接界面以实际环境为准。</p>
+</div>
+</div>
+</section>
+<section class="wrap section">
+<div class="eyebrow">SMALL BY DESIGN</div>
+<h2>边界清楚，才能放心使用。</h2>
+<div class="split">
+<div>
+<h3>适合这样的需求</h3>
+<p>个人基础设施、小团队、单节点运维。希望统一脚本通知，有持久队列、清晰投递记录，并允许 Agent 按需读取。</p>
+</div>
+<div>
+<h3>需要其他方案的场景</h3>
+<p>监控采集、多实例高可用、值班排班、告警聚合、超时升级、告警确认和自动修复，当前不在项目能力范围内。</p>
+</div>
+</div>
+<div class="closing">
+<h3>把它变成你愿意长期使用的工具。</h3>
+<p>从一个最小接入案例、一份更清楚的文档，或一个可复现的问题开始。</p>
+<a href="https://github.com/xiongwei-git/alertbridge/blob/main/CONTRIBUTING.md">参与贡献 ↗</a>
+<a href="https://github.com/xiongwei-git/alertbridge/blob/main/SECURITY.md">安全政策 ↗</a>
+<a href="https://github.com/xiongwei-git/alertbridge/blob/main/CHANGELOG.md">版本记录 ↗</a>
+</div>
+</section>
+</main>
+<footer class="wrap footer">
+<span>AlertBridge / by xiongwei-git</span>
+<span>Apache-2.0 · 独立开源项目 · 非 OpenAI 官方产品</span>
+<a href="https://github.com/xiongwei-git/alertbridge">Source ↗</a>
+</footer>
+</body>
+</html>

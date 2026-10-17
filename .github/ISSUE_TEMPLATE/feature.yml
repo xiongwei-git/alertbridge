@@ -1,0 +1,15 @@
+name: Feature proposal
+description: 以实际场景讨论能力与边界
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 当前无法解决的具体问题
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议行为、替代方案与兼容性
+    validations:
+      required: true

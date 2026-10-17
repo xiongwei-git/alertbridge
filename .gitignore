@@ -13,3 +13,6 @@
 
 PROJECT_BRIEF.md
 PROJECT_MEMORY.md
+
+/dist-site/
+__pycache__/
