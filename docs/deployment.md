@@ -151,6 +151,26 @@ location / {
 
 `Host` 和 `X-Forwarded-Proto` 不能省略，后台“接入指南”使用它们生成当前服务地址。公网只开放 443 和按需用于跳转的 80；不要开放 18080。WAF 不得改写 API 原始 JSON，否则 HMAC 会失效。
 
+启用 Dots OAuth 时，宝塔默认的 `location /.well-known` 可能让发现接口返回 Nginx 404。在站点 `server` 内为以下三个路径分别添加精确匹配的反向代理（保留原有 ACME 验证规则）：
+
+- `/.well-known/oauth-protected-resource`
+- `/.well-known/oauth-protected-resource/mcp`
+- `/.well-known/oauth-authorization-server`
+
+每个路径使用下面的配置，将第一行路径替换为对应值：
+
+```nginx
+location = /.well-known/oauth-protected-resource/mcp {
+    proxy_pass http://127.0.0.1:18080;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+执行 `nginx -t` 成功后平滑重载，确认两个 OAuth 发现接口返回 JSON；未认证访问 `/mcp` 返回带 `WWW-Authenticate` 的 401 是正常行为。
+
 ## 7. 首次后台配置
 
 打开：
