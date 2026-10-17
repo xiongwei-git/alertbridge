@@ -7,6 +7,12 @@
 - 重写官网技术说明，统一使用 `opensource.tedxiong.com`，停止 GitHub Pages 发布。
 - 本轮仅修改文档、静态网站和网站校验；应用版本、API 行为和数据库结构不变。
 
+## v0.5.1 — 2026-10-17
+
+- 公开项目介绍页通过 Go embed 内嵌，Docker 镜像直接提供 `GET /` 和 `HEAD /`，不再需要独立 Nginx 页面配置。
+- 根页不创建会话、不读取业务数据；采用独立 CSP 样式哈希，未知路径、通知 API、MCP、OAuth/OIDC 与后台认证保持原契约。
+- 增加匿名根页、方法/路径隔离、CSP 和真实 Docker 镜像回归测试；无需数据库迁移或新增依赖。
+
 ## v0.5.0 — 2026-10-17
 
 - 新增可选管理员 OIDC 登录，使用 Authorization Code、PKCE S256、state、nonce 和 RS256 ID Token 验证。

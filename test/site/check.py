@@ -41,6 +41,16 @@ for name in ('index.html', 'collection.html'):
         if not path and url.fragment:
             assert url.fragment in page.ids, f'missing anchor: {link}'
 
+home_source = (ROOT / 'internal/httpapi/static/service-home.html').read_text()
+home = Page()
+home.feed(home_source)
+assert home_source.count('<style>') == 1, 'service home uses one CSP-hashed style block'
+assert not re.search(r'<(?:script|form|input|iframe|object|embed|img|link)\b', home_source, re.I), 'service home must be standalone and passive'
+assert not re.search(r'@import|url\s*\(|\son\w+\s*=', home_source, re.I), 'service home must not load assets or execute handlers'
+for link in home.links:
+    assert link in ('/', '/admin/', '#main') or link.startswith('https://'), f'unexpected service home link: {link}'
+assert '无需登录' in home_source and '不读取或展示内部告警数据' in home_source
+
 script = (ROOT / 'site/demo.js').read_text()
 for forbidden in ('fetch(', 'XMLHttpRequest', 'WebSocket(', 'localStorage', 'sessionStorage', 'innerHTML', 'sendBeacon'):
     assert forbidden not in script, f'demo must remain local-only: {forbidden}'

@@ -4,7 +4,7 @@ AlertBridge is a single-instance notification gateway written in Go with SQLite.
 
 [中文](README.md) · [Website and simulated demo](https://opensource.tedxiong.com/alertbridge/) · [Deployment](docs/deployment.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md)
 
-Current release: **v0.5.0**. This release adds optional administrator OIDC login without changing notification APIs, MCP authorization or business data formats.
+Current release: **v0.5.1**. The public introduction at `/` is embedded in the service and Docker image, with no separate static Nginx setup. Optional administrator OIDC, notification APIs, MCP authorization and business data formats remain unchanged.
 
 ## Features
 
@@ -32,7 +32,7 @@ The [browser demo](https://opensource.tedxiong.com/alertbridge/#demo) uses ficti
 
 ## Deploy
 
-Use the official `ghcr.io/xiongwei-git/alertbridge:v0.5.0` image and matching versioned Compose files. Follow the [deployment guide](docs/deployment.md) for file-backed bootstrap credentials and HTTPS reverse proxy setup. Bind the application to loopback only. Back up the database and master-key volumes together.
+Use the official `ghcr.io/xiongwei-git/alertbridge:v0.5.1` image and matching versioned Compose files. Follow the [deployment guide](docs/deployment.md) for file-backed bootstrap credentials and HTTPS reverse proxy setup. Bind the application to loopback only. Back up the database and master-key volumes together.
 
 OIDC is optional and has been tested with Tinyauth. It requires the versioned `compose.oidc.yaml` overlay and a restricted server-side JSON Secret. Keep the overlay active for all Compose operations, and back up its configuration separately. Administrator OIDC and MCP OAuth are separate flows: provider tokens are not issued to agents. Logout clears only the local application session.
 

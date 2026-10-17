@@ -62,6 +62,15 @@ secret_mount_rw=$(docker inspect "$container_id" --format '{{range .Mounts}}{{if
   exit 1
 }
 
+# Exercise the compiled-in page directly through the production Docker image,
+# without an Nginx/static-file mount or an administrator cookie.
+curl -fsS -D "$tmp_dir/home.headers" "http://127.0.0.1:$port/" > "$tmp_dir/home.html"
+cmp "$project_dir/internal/httpapi/static/service-home.html" "$tmp_dir/home.html"
+grep -qi "style-src 'sha256-" "$tmp_dir/home.headers"
+! grep -qi '^Set-Cookie:' "$tmp_dir/home.headers"
+[ "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/not-a-route")" = 404 ]
+[ "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$port/")" = 405 ]
+
 login_status=$(curl -sS -o "$tmp_dir/login.html" -D "$tmp_dir/login.headers" -c "$tmp_dir/cookies.txt" -w '%{http_code}' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   --data-urlencode 'username=admin' \

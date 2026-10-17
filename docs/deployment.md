@@ -2,6 +2,8 @@
 
 本文覆盖无仓库 Docker Compose 部署、宝塔 Nginx、首次配置、升级回滚、备份恢复和排障。AlertBridge 是单实例服务，不允许多个容器同时写入同一个 SQLite 数据卷。
 
+v0.5.1 起域名根路径 `/` 自动提供内嵌项目介绍页，无需登录、不读取业务数据，也无需单独托管静态文件。其他路径继续走原代理与认证。旧静态根页扩展需停用，见[介绍页及迁移说明](showcase-deployment.md#运行服务的公开根路径介绍页)。
+
 ## 1. 推荐拓扑
 
 ```text
@@ -34,7 +36,7 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.0/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.1/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
@@ -49,7 +51,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.5.0' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.5.1' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -393,7 +395,7 @@ chmod 700 secrets
 chown 10001:0 secrets/oidc.json
 chmod 400 secrets/oidc.json
 curl -fsSLo compose.oidc.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.0/compose.oidc.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.1/compose.oidc.yaml
 ```
 
 将第 9 节的 `COMPOSE_FILE` 和绝对文件路径加入 `.env`，确认镜像标签为 `v0.5.0` 或更高的兼容正式版本，然后：

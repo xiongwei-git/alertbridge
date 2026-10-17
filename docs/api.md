@@ -1,5 +1,7 @@
 # AlertBridge v1 API 契约
 
+`GET /` 与 `HEAD /` 公开提供服务内嵌的项目介绍 HTML，不创建登录会话、不读取业务数据。其他根路径方法返回 `405`（`Allow: GET, HEAD`），未知路径仍为 `404`。这不改变下面通知 API、MCP 或管理员认证的契约。
+
 本文描述 v1 通知 API；OpenAPI 的 `info.version` 是接口文档版本，独立于应用发布版本 v0.5.0。管理员 OIDC 不改变以下 API 的认证。
 
 除以下通知入站 API 外，可选 `/mcp` 提供独立授权的只读 Agent 查询。它使用 MCP JSON-RPC，而非 REST 入站契约；详见 [MCP 接入指南](mcp.md)。现有两个通知接口的认证和响应不变。

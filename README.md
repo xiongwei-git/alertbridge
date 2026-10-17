@@ -6,7 +6,9 @@ AlertBridge 是用 Go 和 SQLite 实现的单实例通知网关。它接收 HTTP
 
 [项目网站与模拟 Demo](https://opensource.tedxiong.com/alertbridge/) · [English](README.en.md) · [部署](docs/deployment.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md) · [发布记录](CHANGELOG.md)
 
-当前发布版本：**v0.5.0**。该版本增加可选的管理员 OIDC 登录；通知 API、MCP 授权和业务数据格式保持兼容。
+当前发布版本：**v0.5.1**。项目介绍页已内嵌于服务并随镜像部署，保留可选管理员 OIDC 登录；通知 API、MCP 授权和业务数据格式保持兼容。
+
+运行服务的域名根路径 `/` 自动提供无需登录的项目介绍页，不展示业务数据，无需额外配置 Nginx 静态页面。API、MCP 和后台认证不变。见[介绍页说明及旧配置迁移](docs/showcase-deployment.md#运行服务的公开根路径介绍页)。
 
 ## 功能
 
@@ -52,10 +54,10 @@ cd alertbridge
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.0/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.1/compose.yaml
 ```
 
-按 [部署指南](docs/deployment.md) 创建 `.env` 和文件型管理员 Secret，将 `ALERTBRIDGE_IMAGE_TAG` 固定为 `v0.5.0`，再启动服务。基础部署使用密码登录；OIDC 另需同版本 `compose.oidc.yaml`、身份提供方和受限配置文件。
+按 [部署指南](docs/deployment.md) 创建 `.env` 和文件型管理员 Secret，将 `ALERTBRIDGE_IMAGE_TAG` 固定为 `v0.5.1`，再启动服务。基础部署使用密码登录；OIDC 另需同版本 `compose.oidc.yaml`、身份提供方和受限配置文件。
 
 应用只绑定 `127.0.0.1:18080`，由 Nginx 提供 HTTPS。官方镜像为 `ghcr.io/xiongwei-git/alertbridge`，支持 `linux/amd64` 与 `linux/arm64`。ACR 是可选部署镜像，不是独立发布来源。
 

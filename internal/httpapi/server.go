@@ -84,6 +84,7 @@ func New(cfg Config) http.Handler {
 		server.cfg.IsSilenced = func(string, string, time.Time) bool { return false }
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/{$}", server.home)
 	mux.HandleFunc("/healthz", server.health)
 	mux.HandleFunc("/readyz", server.ready)
 	mux.HandleFunc("/api/v1/events", server.events)
