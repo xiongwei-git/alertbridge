@@ -62,6 +62,10 @@ func TestOAuthPKCEAndRefresh(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	loggedIn = true
+	consent := send("GET", authURL(), nil)
+	if got := consent.Header().Get("Content-Security-Policy"); !strings.Contains(got, "form-action 'self' "+o.redirect+";") {
+		t.Fatalf("consent CSP must allow the configured OAuth callback redirect: %s", got)
+	}
 	if w := send("GET", authURL(), nil); w.Code != 200 || !strings.Contains(w.Body.String(), "test-csrf") {
 		t.Fatal(w.Code, w.Body.String())
 	}

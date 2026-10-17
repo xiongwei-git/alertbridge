@@ -95,6 +95,9 @@ func (o *OAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 var consentTemplate = template.Must(template.New("consent").Parse(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>AlertBridge 只读授权</title><h1>允许 Dots 查询告警？</h1><p>客户端：alertbridge-dots</p><p>权限：查询告警、投递状态和活跃故障。无法修改配置或恢复故障。</p><p>可见路由：{{.Routes}}</p><p>回调地址：{{.Redirect}}</p><form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button name="decision" value="allow">允许只读访问</button> <button name="decision" value="deny">取消</button></form></html>`))
 
 func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
+	// Chromium applies form-action to the POST's redirect chain as well.
+	// Permit only our configured callback, still checked by exact match below.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; form-action 'self' "+o.redirect+"; base-uri 'none'; frame-ancestors 'none'")
 	if r.Method != "GET" && r.Method != "POST" {
 		oauthError(w, 405, "invalid_request")
 		return
