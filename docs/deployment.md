@@ -121,7 +121,7 @@ docker compose pull
 docker compose up -d
 ```
 
-`ALERTBRIDGE_IMAGE` 只改变镜像仓库，升级与回滚仍然只修改 `ALERTBRIDGE_IMAGE_TAG`。ACR 是国内部署镜像，GHCR 仍是官方版本和发布来源。
+`ALERTBRIDGE_IMAGE` 只改变镜像仓库，升级与回滚仍然只修改 `ALERTBRIDGE_IMAGE_TAG`。ACR 是国内部署镜像，GHCR 仍是官方版本和发布来源。ACR 复制并核验 GHCR 的原始 AMD64/ARM64 平台摘要；因 ACR 不支持新版证明文件格式，来源证明保留在 GHCR，镜像索引摘要可以不同。
 
 ## 6. 宝塔 HTTPS 反向代理
 

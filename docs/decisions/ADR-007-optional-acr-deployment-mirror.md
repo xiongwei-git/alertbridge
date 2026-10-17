@@ -4,6 +4,8 @@
 
 Accepted
 
+Amended 2026-10-17 after ACR rejected the OCI empty-config attestation format.
+
 ## Date
 
 2026-07-16
@@ -19,6 +21,8 @@ The official image, provenance and release lifecycle must remain on GitHub. The 
 - GHCR remains the only official image registry and source of release provenance.
 - A release may copy the already-published GHCR multi-architecture image to an authenticated ACR repository configured through the `ACR_IMAGE` and `ACR_USERNAME` repository variables and the `ACR_PASSWORD` repository secret.
 - The ACR job consumes the immutable GHCR digest produced by the official publishing job. It does not rebuild source.
+- The mirror copies the exact published AMD64/ARM64 platform manifests from that digest and verifies their platform/digest pairs after publishing. ACR cannot store the newer attestation config format, so provenance artifacts remain on GHCR. The mirror index digest may differ; the runtime platform digests must match the official source exactly.
+- A manual workflow run may retry mirroring an existing version, resolving the immutable digest from its official GHCR tag and performing the same checks without rebuilding.
 - Failure or absence of the optional ACR configuration does not invalidate the official GHCR release.
 - `compose.yaml` defaults to GHCR and accepts an optional `ALERTBRIDGE_IMAGE` override. Mainland production can use an ACR VPC image path while retaining the same explicit `ALERTBRIDGE_IMAGE_TAG` upgrade and rollback workflow.
 - ACR credentials stay outside the repository and service environment. GitHub Actions receives the push credential as a repository secret; each Docker host authenticates separately for pulls.

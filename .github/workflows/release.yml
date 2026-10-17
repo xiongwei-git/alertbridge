@@ -3,6 +3,12 @@ name: Release container image
 on:
   push:
     tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing official GHCR version to mirror without rebuilding
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -19,6 +25,7 @@ env:
 
 jobs:
   verify:
+    if: github.event_name == 'push'
     name: Test release
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -48,6 +55,7 @@ jobs:
         run: ./test/e2e/run.sh
 
   publish:
+    if: github.event_name == 'push'
     name: Publish multi-architecture image
     needs: verify
     runs-on: ubuntu-24.04
@@ -118,6 +126,7 @@ jobs:
   mirror-acr:
     name: Mirror image to ACR
     needs: publish
+    if: always() && (needs.publish.result == 'success' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     continue-on-error: true
@@ -170,9 +179,19 @@ jobs:
         if: steps.acr.outputs.enabled == 'true'
         env:
           SOURCE_DIGEST: ${{ needs.publish.outputs.digest }}
+          RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
           set -eu
-          version=$GITHUB_REF_NAME
+          version=$RELEASE_VERSION
+          echo "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+          if [ -z "$SOURCE_DIGEST" ]; then
+            SOURCE_DIGEST=$(docker buildx imagetools inspect "$REGISTRY/$IMAGE_NAME:$version" --format '{{.Manifest.Digest}}')
+          fi
+          echo "$SOURCE_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          source="$REGISTRY/$IMAGE_NAME@$SOURCE_DIGEST"
+          docker buildx imagetools inspect --raw "$source" > source-index.json
+          amd64=$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest' source-index.json)
+          arm64=$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "arm64") | .digest' source-index.json)
           version_number=${version#v}
           major=${version_number%%.*}
           remainder=${version_number#*.}
@@ -188,5 +207,10 @@ jobs:
 
           docker buildx imagetools create \
             "$@" \
-            "$REGISTRY/$IMAGE_NAME@$SOURCE_DIGEST"
+            "$REGISTRY/$IMAGE_NAME@$amd64" \
+            "$REGISTRY/$IMAGE_NAME@$arm64"
+          docker buildx imagetools inspect --raw "$ACR_IMAGE:$version" > mirror-index.json
+          jq -S '[.manifests[] | select(.platform.os == "linux") | {platform, digest}] | sort_by(.platform.architecture)' source-index.json > expected.json
+          jq -S '[.manifests[] | {platform, digest}] | sort_by(.platform.architecture)' mirror-index.json > actual.json
+          diff -u expected.json actual.json
           docker buildx imagetools inspect "$ACR_IMAGE:$version"
