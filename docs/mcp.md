@@ -83,3 +83,7 @@ URL：https://你的服务域名/mcp
 ## Dots 主动触发的后续边界
 
 OpenAI 官方已提供 [MCP Events](https://developers.openai.com/plugins/build/mcp-events)，适用于 Dots 和指定的 Work 环境。主动触发需要进一步实现官方事件订阅和 Webhook 投递契约，普通 `tools/list` / `tools/call` 查询端点不会自动触发 Dots。本阶段提供 OAuth 和只读查询，没有事件订阅或自动唤醒。
+
+## 任务导向案例
+
+从最近十条、单条投递证据到故障恢复验收，见 [Dots 接入示例](dots-example.md)。

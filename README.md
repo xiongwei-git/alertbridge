@@ -2,12 +2,39 @@
 
 [![CI](https://github.com/xiongwei-git/alertbridge/actions/workflows/ci.yml/badge.svg)](https://github.com/xiongwei-git/alertbridge/actions/workflows/ci.yml)
 
-AlertBridge 是面向个人、小团队和单节点运维环境的轻量通知网关。外部服务通过简单通知或完整事件 API 提交消息；AlertBridge 负责认证、路由、静默、去重、持久化排队、失败重试和多渠道投递。
+**让服务专注业务，让通知统一到达，让 Agent 按权限读懂告警。**
 
-它采用 Go 单进程、SQLite 和服务端渲染后台，不依赖 Redis、PostgreSQL、Node.js 或 CDN。生产镜像基于 `scratch`；加入官方 MCP SDK 和 Dots OAuth 后，本地 Docker E2E 参考镜像约 21.5 MB、空闲内存约 14 MiB。Compose 默认限制为 128 MiB 内存和 0.5 CPU。
+AlertBridge 是个人、小团队和单节点运维环境的轻量自托管通知网关。业务脚本不再各自维护渠道密钥和重试逻辑：一次接入，统一认证、路由、去重、持久排队与多渠道投递。支持飞书、Telegram、ntfy、TLS SMTP，并提供可选的只读 MCP 与 Dots OAuth。
 
-<img width="1510" height="1290" alt="image" src="https://github.com/user-attachments/assets/5d362c39-163f-460e-8ad2-a907099e3bf9" />
+[English](README.en.md) · [部署指南](docs/deployment.md) · [Dots 实例](docs/dots-example.md) · [Python 接入](examples/python/README.md) · [参与贡献](CONTRIBUTING.md)
 
+## 先理解，再试用
+
+| 你的目标 | 从这里开始 |
+| --- | --- |
+| 不部署，先理解故障到恢复的流程 | [官网与浏览器模拟 Demo 源码](site/index.html)，本地预览见下方 |
+| 体验真实后台、持久化和投递 | `./scripts/local-demo.sh up`，本机 18081 端口 |
+| 部署到自己的服务器 | [Docker + 宝塔指南](docs/deployment.md) |
+| 让 Dots 查询最近告警与活跃故障 | [可验收的 Dots 接入案例](docs/dots-example.md) |
+
+```sh
+# 浏览器演示：仅需 Python 3，无凭据、不连接生产 API
+./scripts/build-site.sh
+python3 -m http.server 18083 --bind 127.0.0.1 --directory dist-site
+# 集合首页 http://127.0.0.1:18083/ ，项目 Demo /alertbridge/
+```
+
+Demo 使用明确标注的虚构数据；真实接收与渠道送达必须在隔离 Docker 环境验证。GitHub Pages 工作流及独立宝塔静态站部署见 [官网部署](docs/showcase-deployment.md)。公开地址将在实际发布验收后添加。
+
+项目采用 Go 单进程、一个 SQLite 连接和一个持久 Worker，不依赖 Redis、PostgreSQL、Node.js 或 CDN。生产镜像基于 `scratch`，Compose 默认限制为 128 MiB 内存和 0.5 CPU。历史本地 E2E 参考镜像约 21.5 MB、空闲内存约 14 MiB；这些不是所有平台的性能保证。
+
+## 为什么保留一个小网关
+
+- **少一份重复逻辑**：把渠道凭据、路由和失败重试从每个业务服务中抽出来。
+- **多一份可查证据**：从接收、去重到投递记录追踪结果；HTTP 接收成功不等于消息送达。
+- **清晰的 Agent 权限**：按路由读取历史、详情和活跃故障，不把告警文本变成执行授权。
+
+适合单节点、小规模自托管；高可用值班、监控采集、升级通知和自动修复需要其他系统或新的架构决策。
 
 ## 当前边界
 
@@ -234,6 +261,12 @@ docs                   API、部署和架构决策
 test/e2e               Docker 端到端测试
 test/release           GHCR/ACR 发布与生产 Compose 契约检查
 ```
+
+## 开源协作与版本
+
+当前源码版本为 v0.4.2；本轮 v1.0 是开源体验里程碑候选，尚未发布正式镜像。候选不改变 API、数据库或现有部署，见 [变更记录](CHANGELOG.md) 与 [全盘审视](docs/opensource-review.md)。安装命令继续引用已有版本。
+
+欢迎最小可复现的 Issue、真实接入案例与文档改进。阅读 [贡献指南](CONTRIBUTING.md)、[行为准则](CODE_OF_CONDUCT.md) 和 [安全政策](SECURITY.md)。维护由个人尽力提供，不承诺响应 SLA。AlertBridge 是独立开源项目，与渠道厂商或 OpenAI 无官方从属关系。
 
 ## 许可证
 
