@@ -278,6 +278,15 @@ grep -q 'e2e-event-1' "$tmp_dir/mcp-response.json"
 grep -q 'Baota E2E alert' "$tmp_dir/mcp-response.json"
 ! grep -q "$client_secret" "$tmp_dir/mcp-response.json"
 ! grep -q "$ingress_token" "$tmp_dir/mcp-response.json"
+mcp_status=$(curl -sS -o "$tmp_dir/mcp-latest.json" -w '%{http_code}' \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -H "Authorization: Bearer $oauth_access" \
+  --data-binary '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_alerts","arguments":{"order":"desc","limit":10}}}' \
+  "http://127.0.0.1:$port/mcp")
+[ "$mcp_status" = 200 ] || exit 1
+grep -q '"received_at"' "$tmp_dir/mcp-latest.json"
+! grep -q '"isError":true' "$tmp_dir/mcp-latest.json"
+! grep -q '"checkpoint"' "$tmp_dir/mcp-latest.json"
 mcp_status=$(curl -sS -o /dev/null -w '%{http_code}' \
   -H 'Content-Type: application/json' --data-binary '{}' "http://127.0.0.1:$port/mcp")
 [ "$mcp_status" = 401 ] || exit 1

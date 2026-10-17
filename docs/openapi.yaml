@@ -1,12 +1,12 @@
 openapi: 3.1.0
 info:
   title: AlertBridge API
-  version: 1.4.0
+  version: 1.4.1
 paths:
   /mcp:
     post:
       summary: Optional route-scoped read-only MCP transport
-      description: Disabled unless independently configured. Streamable HTTP JSON-RPC tools list_alerts, get_alert and list_active_incidents. See docs/mcp.md for schemas, cursors and client setup. This does not use notification ingress tokens.
+      description: Disabled unless independently configured. Streamable HTTP JSON-RPC tools list_alerts, get_alert and list_active_incidents. list_alerts accepts order asc (default) or desc by receipt time and record ID; use desc with limit 10 for latest alerts. Cursors are direction-bound; legacy cursors remain ascending. Only ascending queries return an incremental checkpoint. See docs/mcp.md for schemas, cursors and client setup. This does not use notification ingress tokens.
       security:
         - MCPBearerAuth: []
         - MCPOAuth: ['alerts:read']

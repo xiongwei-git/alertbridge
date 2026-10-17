@@ -45,7 +45,7 @@ secrets/admin_password
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.4.1/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.4.2/compose.yaml
 ```
 
 创建仅当前账户可进入的 Secret 目录和部署参数。管理员密码至少 16 字节，不要使用项目内置的通用密码：
@@ -55,7 +55,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.4.1' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.4.2' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -122,7 +122,7 @@ curl --fail-with-body --silent --show-error \
 
 ## Agent 查询
 
-Agent 可通过可选的只读 `/mcp` 查询历史告警、详情与活跃故障。Dots 使用 OAuth + PKCE，复用已有管理员登录确认授权；Codex/OpenClaw 也可使用独立的固定 Bearer。它复用当前进程与 SQLite，默认关闭。Dots 部署只需配置公网 HTTPS 根地址 `ALERTBRIDGE_PUBLIC_URL` 和允许读取的 `ALERTBRIDGE_MCP_ROUTES`，无需额外账号或身份服务。配置方法、撤销和连接步骤见 [MCP 接入指南](docs/mcp.md)。
+Agent 可通过可选的只读 `/mcp` 查询历史告警、详情与活跃故障。`list_alerts` 用 `order=desc, limit=10` 一次读取最近 10 条，默认正序仍兼容增量读取。Dots 使用 OAuth + PKCE，复用已有管理员登录确认授权；Codex/OpenClaw 也可使用独立的固定 Bearer。它复用当前进程与 SQLite，默认关闭。Dots 部署只需配置公网 HTTPS 根地址 `ALERTBRIDGE_PUBLIC_URL` 和允许读取的 `ALERTBRIDGE_MCP_ROUTES`，无需额外账号或身份服务。配置方法、撤销和连接步骤见 [MCP 接入指南](docs/mcp.md)。
 
 ## 完整事件签名
 

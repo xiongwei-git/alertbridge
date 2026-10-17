@@ -32,6 +32,12 @@ func TestReadOnlyMCP(t *testing.T) {
 		}
 		ids[route] = a.EventID
 	}
+	for i, id := range []string{"recent-1", "recent-2"} {
+		_, err := db.AcceptEvent(context.Background(), store.AcceptParams{RawPayload: []byte("{}"), ClientID: "test", Event: domain.Event{EventID: id, Source: "monitor", RoutingKey: "ops", Status: domain.StatusInfo, Severity: domain.SeverityInfo, Title: id, Message: "body", OccurredAt: now.Add(-time.Hour)}, Now: now.Add(time.Duration(i+1) * time.Second), Targets: []string{"test.channel"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	token := strings.Repeat("a", 64)
 	sum := sha256.Sum256([]byte(token))
 	h, e := New(db, hex.EncodeToString(sum[:]), "ops")
@@ -61,6 +67,33 @@ func TestReadOnlyMCP(t *testing.T) {
 		if w.Code != 200 {
 			t.Fatalf("%d %s", w.Code, w.Body.String())
 		}
+		if strings.Contains(body, "tools/list") {
+			var result struct {
+				Result struct {
+					Tools []struct {
+						Name        string `json:"name"`
+						InputSchema struct {
+							Properties map[string]struct {
+								Enum []string `json:"enum"`
+							} `json:"properties"`
+						} `json:"inputSchema"`
+					} `json:"tools"`
+				} `json:"result"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, tool := range result.Result.Tools {
+				if tool.Name == "list_alerts" {
+					values := tool.InputSchema.Properties["order"].Enum
+					found = len(values) == 2 && values[0] == "asc" && values[1] == "desc"
+				}
+			}
+			if !found {
+				t.Fatalf("MCP tool schema does not advertise order enum: %s", w.Body.String())
+			}
+		}
 	}
 	tool := func(name, args string) map[string]any {
 		w := call(token, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"`+name+`","arguments":`+args+`}}`)
@@ -77,6 +110,30 @@ func TestReadOnlyMCP(t *testing.T) {
 	b, _ := json.Marshal(list)
 	if !bytes.Contains(b, []byte(ids["ops"])) || bytes.Contains(b, []byte(ids["private"])) {
 		t.Fatal(string(b))
+	}
+	latest := tool("list_alerts", `{"order":"desc","limit":1}`)
+	var latestResult struct {
+		Result struct {
+			StructuredContent store.AlertPage `json:"structuredContent"`
+		} `json:"result"`
+	}
+	b, _ = json.Marshal(latest)
+	if err := json.Unmarshal(b, &latestResult); err != nil {
+		t.Fatal(err)
+	}
+	p := latestResult.Result.StructuredContent
+	if len(p.Alerts) != 1 || p.Alerts[0].EventID != "recent-2" || p.NextCursor == "" || p.Checkpoint != "" {
+		t.Fatalf("latest MCP result: %s", b)
+	}
+	badDirection := tool("list_alerts", `{"order":"asc","cursor":"`+p.NextCursor+`"}`)
+	b, _ = json.Marshal(badDirection)
+	if !bytes.Contains(b, []byte(`"isError":true`)) {
+		t.Fatal("MCP accepted cursor direction change")
+	}
+	badOrder := tool("list_alerts", `{"order":"newest"}`)
+	b, _ = json.Marshal(badOrder)
+	if badOrder["error"] == nil && !bytes.Contains(b, []byte(`"isError":true`)) {
+		t.Fatal("MCP accepted invalid order")
 	}
 	detail := tool("get_alert", `{"id":"`+ids["ops"]+`"}`)
 	b, _ = json.Marshal(detail)

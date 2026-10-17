@@ -34,7 +34,7 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.4.1/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.4.2/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
@@ -49,7 +49,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.4.1' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.4.2' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -270,6 +270,8 @@ docker compose ps
 curl -fsS http://127.0.0.1:18080/readyz
 docker compose logs --tail=100 alertbridge
 ```
+
+MCP 工具增加参数后（例如 v0.4.2 的告警排序），升级镜像后在插件详情页刷新工具定义。已有 OAuth 授权、路由和业务配置无需重建；v0.4.2 没有数据库迁移。
 
 回滚时把镜像标签改回旧版本，重新执行以上命令。若 Release 说明包含不可逆数据库迁移，还必须恢复与旧镜像匹配的两个卷，不能只回滚镜像。
 
