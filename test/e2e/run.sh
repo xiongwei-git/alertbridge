@@ -9,6 +9,10 @@ port=${E2E_PORT:-18082}
 mock_port=${E2E_MOCK_PORT:-19091}
 admin_password=e2e-admin-password-strong
 password_file="$tmp_dir/admin-password"
+mcp_token=$(openssl rand -hex 32)
+export ALERTBRIDGE_MCP_TOKEN_SHA256=$(printf '%s' "$mcp_token" | openssl dgst -sha256 -hex | awk '{print $NF}')
+export ALERTBRIDGE_MCP_ROUTES=infrastructure
+export ALERTBRIDGE_PUBLIC_URL=https://alerts.e2e.invalid
 
 compose() {
   ALERTBRIDGE_PORT="$port" E2E_MOCK_PORT="$mock_port" ALERTBRIDGE_ADMIN_PASSWORD_FILE="$password_file" \
@@ -241,6 +245,42 @@ until curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":3'; do
 done
 
 image_id=$(compose images -q alertbridge)
+oauth_verifier=$(openssl rand -hex 32)
+oauth_challenge=$(printf '%s' "$oauth_verifier" | openssl dgst -sha256 -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+oauth_query="client_id=alertbridge-dots&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector_platform_oauth_redirect&response_type=code&code_challenge_method=S256&code_challenge=$oauth_challenge&resource=https%3A%2F%2Falerts.e2e.invalid%2Fmcp&scope=alerts%3Aread&state=e2e"
+oauth_status=$(curl -sS -o /dev/null -D "$tmp_dir/oauth-headers" -w '%{http_code}' \
+  -b "$tmp_dir/cookies.txt" --data-urlencode "csrf=$csrf" --data-urlencode 'decision=allow' \
+  "http://127.0.0.1:$port/admin/mcp/authorize?$oauth_query")
+[ "$oauth_status" = 303 ] || exit 1
+oauth_code=$(sed -n 's/^[Ll]ocation: .*code=\([^&]*\).*/\1/p' "$tmp_dir/oauth-headers" | tr -d '\r')
+[ -n "$oauth_code" ] || exit 1
+oauth_status=$(curl -sS -o "$tmp_dir/oauth-token.json" -w '%{http_code}' \
+  --data-urlencode 'grant_type=authorization_code' --data-urlencode 'client_id=alertbridge-dots' \
+  --data-urlencode "code=$oauth_code" --data-urlencode "code_verifier=$oauth_verifier" \
+  --data-urlencode 'redirect_uri=https://chatgpt.com/connector_platform_oauth_redirect' \
+  --data-urlencode 'resource=https://alerts.e2e.invalid/mcp' "http://127.0.0.1:$port/oauth/token")
+[ "$oauth_status" = 200 ] || exit 1
+oauth_access=$(sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p' "$tmp_dir/oauth-token.json")
+[ -n "$oauth_access" ] || exit 1
+oauth_status=$(curl -sS -o "$tmp_dir/oauth-tools.json" -w '%{http_code}' \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -H "Authorization: Bearer $oauth_access" --data-binary '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+  "http://127.0.0.1:$port/mcp")
+[ "$oauth_status" = 200 ] || exit 1
+grep -q 'list_active_incidents' "$tmp_dir/oauth-tools.json"
+mcp_status=$(curl -sS -o "$tmp_dir/mcp-response.json" -w '%{http_code}' \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -H 'Mcp-Protocol-Version: 2025-11-25' -H "Authorization: Bearer $mcp_token" \
+  --data-binary '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_alerts","arguments":{"limit":100}}}' \
+  "http://127.0.0.1:$port/mcp")
+[ "$mcp_status" = 200 ] || { cat "$tmp_dir/mcp-response.json"; exit 1; }
+grep -q 'e2e-event-1' "$tmp_dir/mcp-response.json"
+grep -q 'Baota E2E alert' "$tmp_dir/mcp-response.json"
+! grep -q "$client_secret" "$tmp_dir/mcp-response.json"
+! grep -q "$ingress_token" "$tmp_dir/mcp-response.json"
+mcp_status=$(curl -sS -o /dev/null -w '%{http_code}' \
+  -H 'Content-Type: application/json' --data-binary '{}' "http://127.0.0.1:$port/mcp")
+[ "$mcp_status" = 401 ] || exit 1
 image_bytes=$(docker image inspect "$image_id" --format '{{.Size}}')
 memory_usage=$(docker stats --no-stream --format '{{.MemUsage}}' "$container_id")
 

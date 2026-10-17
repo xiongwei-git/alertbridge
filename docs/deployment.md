@@ -34,7 +34,7 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.3.1/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.4.0/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
@@ -49,7 +49,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.3.1' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.4.0' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -209,6 +209,8 @@ URL：https://你的域名/api/v1/notifications
 上述字段来自[宝塔自定义消息通道指南](https://www.bt.cn/bbs/thread-143326-1-1.html)中的 `$title`、`$msg`、`$type`。原帖界面以 Linux 面板 9.5.0 为例，其他版本的菜单名称可能不同，但请求 URL、请求头和自定义正文的配置原则相同。
 
 ## 8. 上线验收
+
+可选 Dots 查询：在 `.env` 配置 `ALERTBRIDGE_PUBLIC_URL=https://实际服务域名` 和 `ALERTBRIDGE_MCP_ROUTES=base`，使用新版 Compose 和镜像重新创建服务。Dots 选择 OAuth、Client ID 填 `alertbridge-dots`、Client Secret 留空，登录现有管理员账号并确认只读授权。Codex/OpenClaw 可另配 `ALERTBRIDGE_MCP_TOKEN_SHA256` 使用固定 Bearer。默认关闭；完整回调、授权撤销与配置步骤见 [MCP 接入指南](mcp.md)。修改公网地址或读取路由会使旧 OAuth 授权失效，固定 Bearer 需另行轮换摘要。
 
 1. HTTPS 域名的 `/healthz` 和 `/readyz` 正常；
 2. 管理员可以登录，Cookie 通过 HTTPS 正常保存；

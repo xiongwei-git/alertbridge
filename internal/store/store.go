@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS events (
   UNIQUE (client_id, event_id)
 );
 CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+CREATE INDEX IF NOT EXISTS idx_events_route_cursor ON events(routing_key,created_at,id);
 CREATE TABLE IF NOT EXISTS deliveries (
   id TEXT PRIMARY KEY,
   event_record_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
@@ -142,7 +143,7 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("configure sqlite: %w", err)
 		}
 	}
-	if _, err := db.Exec(schema + adminSchema); err != nil {
+	if _, err := db.Exec(schema + adminSchema + oauthSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate sqlite: %w", err)
 	}

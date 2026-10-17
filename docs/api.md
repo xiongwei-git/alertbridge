@@ -1,5 +1,9 @@
 # AlertBridge v1 API 契约
 
+除以下通知入站 API 外，可选 `/mcp` 提供独立授权的只读 Agent 查询。它使用 MCP JSON-RPC，而非 REST 入站契约；详见 [MCP 接入指南](mcp.md)。现有两个通知接口的认证和响应不变。
+
+Dots OAuth 支持预配置公共客户端 `alertbridge-dots`、授权码 + PKCE S256、`alerts:read` 和资源绑定；不支持客户端秘密、DCR 或 CIMD。发现路径为 `/.well-known/oauth-protected-resource/mcp` 与 `/.well-known/oauth-authorization-server`，授权确认页为 `/admin/mcp/authorize`，令牌/轮换端点为 `/oauth/token`，撤销为 `/oauth/revoke`。访问令牌有效 1 小时，授权最长 30 天；刷新令牌每次轮换。所有端点只在配置 OAuth 后注册。
+
 AlertBridge 提供两种兼容并存的入站方式：
 
 | 接口 | 认证 | 适用场景 |

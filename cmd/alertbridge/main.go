@@ -16,6 +16,7 @@ import (
 	"github.com/xiongwei-git/alertbridge/internal/bootstrap"
 	"github.com/xiongwei-git/alertbridge/internal/config"
 	"github.com/xiongwei-git/alertbridge/internal/httpapi"
+	"github.com/xiongwei-git/alertbridge/internal/mcpapi"
 	"github.com/xiongwei-git/alertbridge/internal/runtimecfg"
 	"github.com/xiongwei-git/alertbridge/internal/securestore"
 	"github.com/xiongwei-git/alertbridge/internal/store"
@@ -73,7 +74,26 @@ func main() {
 	logger.Info("secure bootstrap ready", "admin_created", boot.AdminCreated, "master_key_created", boot.MasterKeyCreated)
 	verifier := auth.Verifier{Lookup: gateway.LookupClient, Tolerance: cfg.Auth.TimestampTolerance}
 	bearerVerifier := auth.BearerVerifier{Lookup: gateway.LookupIngressToken}
-	handler := httpapi.New(httpapi.Config{Database: database, Verifier: verifier, BearerVerifier: bearerVerifier, Admin: adminUI, ResolveTargets: gateway.ResolveTargets, IsSilenced: gateway.IsSilenced, NonceRetention: cfg.Auth.NonceRetention, DedupeWindow: cfg.Dedupe.Window, BodyLimitBytes: cfg.Server.BodyLimitBytes, Logger: logger})
+	var mcpHandler http.Handler
+	var oauthHandler http.Handler
+	var oauth *mcpapi.OAuth
+	digest, routes, publicURL := os.Getenv("ALERTBRIDGE_MCP_TOKEN_SHA256"), os.Getenv("ALERTBRIDGE_MCP_ROUTES"), os.Getenv("ALERTBRIDGE_PUBLIC_URL")
+	if publicURL != "" && routes != "" {
+		oauth, err = mcpapi.NewOAuth(database, publicURL, routes, os.Getenv("ALERTBRIDGE_MCP_OAUTH_REDIRECT"), adminUI.OAuthSession)
+		if err != nil {
+			logger.Error("configure MCP OAuth", "error", err)
+			os.Exit(1)
+		}
+		oauthHandler = oauth
+	}
+	if digest != "" || oauth != nil {
+		mcpHandler, err = mcpapi.NewWithOAuth(database, digest, routes, oauth)
+		if err != nil {
+			logger.Error("configure MCP", "error", err)
+			os.Exit(1)
+		}
+	}
+	handler := httpapi.New(httpapi.Config{Database: database, Verifier: verifier, BearerVerifier: bearerVerifier, Admin: adminUI, MCP: mcpHandler, OAuth: oauthHandler, ResolveTargets: gateway.ResolveTargets, IsSilenced: gateway.IsSilenced, NonceRetention: cfg.Auth.NonceRetention, DedupeWindow: cfg.Dedupe.Window, BodyLimitBytes: cfg.Server.BodyLimitBytes, Logger: logger})
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
 	deliveryWorker := worker.New(database, nil, worker.Config{PollInterval: cfg.Worker.PollInterval, LeaseDuration: cfg.Worker.LeaseDuration, RetryDelays: cfg.Worker.RetryDelays, MaxAttempts: cfg.Worker.MaxAttempts, Retention: cfg.Database.Retention, SenderFor: gateway.Sender, DisplayLocation: cfg.Display.Location}).WithLogger(logger)
 	go deliveryWorker.Run(ctx)
