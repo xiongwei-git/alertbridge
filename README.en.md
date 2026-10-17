@@ -4,7 +4,7 @@
 
 AlertBridge receives authenticated events, routes them to Feishu, Telegram, ntfy or TLS SMTP, and records delivery attempts in SQLite. Go, one HTTP process, one database connection and one persistent worker. No Redis, Node.js runtime or external CDN for the admin console.
 
-[中文](README.md) · [Interactive demo source](site/index.html) · [Deployment](docs/deployment.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md)
+[中文](README.md) · [Interactive demo](https://xiongwei-git.github.io/alertbridge/alertbridge/) · [Deployment](docs/deployment.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md)
 
 ## Why use it?
 

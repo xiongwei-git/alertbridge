@@ -46,3 +46,11 @@ add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style
 ## 扩展集合
 
 目前只收录 AlertBridge。其他项目核实公开状态与介绍后再新增条目。未来应将集合站移到独立仓库；本轮保留在 AlertBridge 内以便审阅和发布同一产物，且不引入其他项目的源码或私密资料。
+
+## 本次部署状态（2026-10-17）
+
+- [集合首页](https://xiongwei-git.github.io/alertbridge/) 与 [AlertBridge Demo](https://xiongwei-git.github.io/alertbridge/alertbridge/) 已通过 Pages 工作流发布。
+- 宝塔站点 `opensource.tedxiong.com`，根目录 `/www/wwwroot/opensource.tedxiong.com/releases/20261017-showcase`。服务端 Host 路由验收：五个公开静态文件 HTTP 200、逐文件 SHA-256 匹配，CSP 与缺失路径 404 通过。
+- 初始默认首页与新站配置备份在 `/www/wwwroot/opensource.tedxiong.com/backups/20261017-initial`。
+- 公共 DNS 查询当前返回 NXDOMAIN；需要维护者添加指向宝塔服务器的 A 记录，再申请证书并验收公网 HTTPS。不能将 Host 路由验收称为公开域名上线。
+- 原通知服务仅做就绪检查，未修改运行镜像、Compose、数据卷或凭据。

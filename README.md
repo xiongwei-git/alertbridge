@@ -6,7 +6,7 @@
 
 AlertBridge 是个人、小团队和单节点运维环境的轻量自托管通知网关。业务脚本不再各自维护渠道密钥和重试逻辑：一次接入，统一认证、路由、去重、持久排队与多渠道投递。支持飞书、Telegram、ntfy、TLS SMTP，并提供可选的只读 MCP 与 Dots OAuth。
 
-[English](README.en.md) · [部署指南](docs/deployment.md) · [Dots 实例](docs/dots-example.md) · [Python 接入](examples/python/README.md) · [参与贡献](CONTRIBUTING.md)
+[在线 Demo](https://xiongwei-git.github.io/alertbridge/alertbridge/) · [开源项目集合](https://xiongwei-git.github.io/alertbridge/) · [English](README.en.md) · [部署指南](docs/deployment.md) · [Dots 实例](docs/dots-example.md) · [Python 接入](examples/python/README.md) · [参与贡献](CONTRIBUTING.md)
 
 ## 先理解，再试用
 
@@ -24,7 +24,7 @@ python3 -m http.server 18083 --bind 127.0.0.1 --directory dist-site
 # 集合首页 http://127.0.0.1:18083/ ，项目 Demo /alertbridge/
 ```
 
-Demo 使用明确标注的虚构数据；真实接收与渠道送达必须在隔离 Docker 环境验证。GitHub Pages 工作流及独立宝塔静态站部署见 [官网部署](docs/showcase-deployment.md)。公开地址将在实际发布验收后添加。
+Demo 使用明确标注的虚构数据；真实接收与渠道送达必须在隔离 Docker 环境验证。GitHub Pages 工作流及独立宝塔静态站部署见 [官网部署](docs/showcase-deployment.md)。GitHub Pages 已上线；`opensource.tedxiong.com` 的宝塔独立站已备好静态文件，等待域名解析与 HTTPS 验收。
 
 项目采用 Go 单进程、一个 SQLite 连接和一个持久 Worker，不依赖 Redis、PostgreSQL、Node.js 或 CDN。生产镜像基于 `scratch`，Compose 默认限制为 128 MiB 内存和 0.5 CPU。历史本地 E2E 参考镜像约 21.5 MB、空闲内存约 14 MiB；这些不是所有平台的性能保证。
 
