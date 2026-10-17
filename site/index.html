@@ -174,7 +174,7 @@ cd alertbridge
 <article class="guide">
 <span class="number">02 / PRODUCTION</span>
 <h3>部署 v0.5.1</h3>
-<p>使用 ghcr.io/xiongwei-git/alertbridge:v0.5.1 和同版本 Compose。端口只绑定 loopback，Nginx 提供 HTTPS；数据库与主密钥卷成对备份。</p>
+<p>使用唯一发布源阿里云 ACR 的 v0.5.1 镜像和同版本 Compose，先以获授权的 Registry 账号登录，并按部署指南设置镜像地址。端口只绑定 loopback，Nginx 提供 HTTPS；数据库与主密钥卷成对备份。</p>
 <div class="link-list">
 <a href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/deployment.md">生产部署与恢复指南 ↗</a>
 <a href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/api.md">完整事件与轻量通知契约 ↗</a>
