@@ -380,7 +380,14 @@ curl -fsS http://127.0.0.1:18080/readyz
 }
 ```
 
-在 `.env` 设置 `ALERTBRIDGE_OIDC_CONFIG_FILE` 为该文件绝对路径，以 `docker compose -f compose.yaml -f compose.oidc.yaml` 管理服务。基础 Compose 不启用 OIDC，不影响原密码部署。发现、授权、Token、JWKS 必须使用配置 issuer 的 HTTPS 主机；仅接受 RS256。不要让健康检查、通知接口或整个域名经过统一 auth_request。
+OIDC 需要 v0.5.0 或更高版本的应用镜像。使用发布版本配套的可选 overlay：
+
+```sh
+curl -fsSLo compose.oidc.yaml \
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.0/compose.oidc.yaml
+```
+
+在 `.env` 中将 `ALERTBRIDGE_IMAGE_TAG` 设为 `v0.5.0`（或更新正式版本），并设置 `ALERTBRIDGE_OIDC_CONFIG_FILE` 为该文件绝对路径，以 `docker compose -f compose.yaml -f compose.oidc.yaml` 管理服务。基础 Compose 不启用 OIDC，不影响原密码部署。发现、授权、Token、JWKS 必须使用配置 issuer 的 HTTPS 主机；仅接受 RS256。不要让健康检查、通知接口或整个域名经过统一 auth_request。
 
 先核对线上 Tinyauth 镜像 revision、subject 算法和账号的精确大小写。每个应用新增独立 Client，精确允许 callback，采用 file-backed client secret。保留其他 Client、账号/TOTP、数据与签名密钥；不能照搬另一个 Client 的 sub，也不能以首次登录自动授予管理员。PKCE S256 即使发现文档漏报能力也发送，部署前需核对当前版本实现并通过真实登录验证。
 
