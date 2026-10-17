@@ -1,8 +1,60 @@
 openapi: 3.1.0
 info:
   title: AlertBridge API
-  version: 1.3.1
+  version: 1.4.0
 paths:
+  /mcp:
+    post:
+      summary: Optional route-scoped read-only MCP transport
+      description: Disabled unless independently configured. Streamable HTTP JSON-RPC tools list_alerts, get_alert and list_active_incidents. See docs/mcp.md for schemas, cursors and client setup. This does not use notification ingress tokens.
+      security:
+        - MCPBearerAuth: []
+        - MCPOAuth: ['alerts:read']
+      responses:
+        '200':
+          description: MCP JSON-RPC result (tool errors may also be represented in MCP results)
+        '401': { description: Missing or invalid MCP credential }
+        '429': { description: MCP request limit exceeded }
+        '404': { description: MCP is disabled }
+  /.well-known/oauth-protected-resource/mcp:
+    get:
+      summary: Discover the optional MCP protected resource
+      responses:
+        '200': { description: Resource identifier and authorization server metadata location }
+        '404': { description: OAuth is disabled }
+  /.well-known/oauth-authorization-server:
+    get:
+      summary: Discover the optional OAuth authorization server
+      responses:
+        '200': { description: Issuer, endpoints, public client authentication and PKCE S256 support }
+        '404': { description: OAuth is disabled }
+  /admin/mcp/authorize:
+    get:
+      summary: Authenticate the administrator and display read-only OAuth consent
+      responses:
+        '200': { description: Consent form bound to the administrator session }
+        '303': { description: Redirect to administrator login }
+        '400': { description: Invalid client, callback, scope, resource or PKCE challenge }
+    post:
+      summary: Confirm or deny OAuth consent with administrator CSRF protection
+      responses:
+        '303': { description: Exact allowlisted callback with issuer and state plus a code or denial }
+        '403': { description: CSRF validation failed }
+  /oauth/token:
+    post:
+      summary: Exchange a single-use authorization code or rotate a refresh token
+      description: Form-urlencoded. client_id is alertbridge-dots; no client secret. Require the exact MCP resource. Authorization code exchange also requires redirect_uri and a valid PKCE code_verifier. Refresh accepts refresh_token. Only alerts:read is supported.
+      responses:
+        '200': { description: Opaque access token, rotating refresh token, Bearer type, 3600 second access lifetime and scope }
+        '400': { description: OAuth invalid_request, invalid_grant, invalid_target or unsupported_grant_type }
+        '401': { description: invalid_client }
+        '429': { description: Token endpoint rate limit exceeded }
+  /oauth/revoke:
+    post:
+      summary: Revoke the OAuth grant belonging to the supplied token
+      description: Form-urlencoded client_id and token; no client secret. Unknown tokens also return success.
+      responses:
+        '200': { description: Grant revoked or token not recognized }
   /api/v1/notifications:
     post:
       summary: Accept a constrained one-off notification
@@ -79,6 +131,16 @@ paths:
         '503': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
+    MCPOAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: /admin/mcp/authorize
+          tokenUrl: /oauth/token
+          refreshUrl: /oauth/token
+          scopes:
+            alerts:read: Read configured alert routes only
+    MCPBearerAuth: { type: http, scheme: bearer }
     BearerAuth: { type: http, scheme: bearer }
     ClientID: { type: apiKey, in: header, name: X-Notify-Client }
     Timestamp: { type: apiKey, in: header, name: X-Notify-Timestamp }

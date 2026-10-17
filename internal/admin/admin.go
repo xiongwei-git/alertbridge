@@ -79,6 +79,7 @@ type pageData struct {
 	GuideSeverity        string
 	GuideRouteConfigured bool
 	GuideRoutes          []string
+	Next                 string
 }
 
 type sessionContextKey struct{}
@@ -231,6 +232,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.retryDelivery(w, r, session)
 	case "/admin/guide":
 		h.guide(w, r, session)
+	case "/admin/mcp/revoke":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		if err := h.cfg.Database.RevokeAllOAuth(r.Context()); err != nil {
+			h.renderError(w, 503, "撤销失败")
+			return
+		}
+		http.Redirect(w, r, "/admin/guide?ok=mcp-revoked", http.StatusSeeOther)
 	default:
 		http.NotFound(w, r)
 	}
@@ -238,7 +249,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		h.render(w, http.StatusOK, "login.html", pageData{Title: "登录"})
+		h.render(w, http.StatusOK, "login.html", pageData{Title: "登录", Next: oauthLoginNext(r.URL.Query().Get("next"))})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -253,11 +264,11 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	if err := h.cfg.Database.RecordAdminLoginAttempt(r.Context(), now, 10); err != nil {
 		if errors.Is(err, store.ErrRateLimit) {
 			w.Header().Set("Retry-After", "60")
-			h.render(w, http.StatusTooManyRequests, "login.html", pageData{Title: "登录", Error: "尝试次数过多，请一分钟后再试"})
+			h.render(w, http.StatusTooManyRequests, "login.html", pageData{Title: "登录", Error: "尝试次数过多，请一分钟后再试", Next: oauthLoginNext(r.PostForm.Get("next"))})
 			return
 		}
 		h.cfg.Logger.Error("admin login rate limit", "error", err)
-		h.render(w, http.StatusServiceUnavailable, "login.html", pageData{Title: "登录", Error: "服务暂时不可用"})
+		h.render(w, http.StatusServiceUnavailable, "login.html", pageData{Title: "登录", Error: "服务暂时不可用", Next: oauthLoginNext(r.PostForm.Get("next"))})
 		return
 	}
 	userDigest, expectedUser := sha256.Sum256([]byte(r.Form.Get("username"))), sha256.Sum256([]byte(h.cfg.Username))
@@ -270,7 +281,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	}
 	passwordOK := passwordhash.Verify([]byte(r.Form.Get("password")), h.cfg.PasswordHash)
 	if subtle.ConstantTimeCompare(userDigest[:], expectedUser[:]) != 1 || !passwordOK {
-		h.render(w, http.StatusUnauthorized, "login.html", pageData{Title: "登录", Error: "用户名或密码不正确"})
+		h.render(w, http.StatusUnauthorized, "login.html", pageData{Title: "登录", Error: "用户名或密码不正确", Next: oauthLoginNext(r.PostForm.Get("next"))})
 		return
 	}
 	token, err := randomToken(32)
@@ -291,7 +302,28 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	}
 	h.setSessionCookie(w, token, int(h.cfg.SessionLifetime.Seconds()))
 	h.cfg.Logger.Info("admin login succeeded")
+	if next := oauthLoginNext(r.PostForm.Get("next")); next != "" {
+		http.Redirect(w, r, next, http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+}
+
+func oauthLoginNext(raw string) string {
+	if len(raw) > 8192 {
+		return ""
+	}
+	u, e := url.Parse(raw)
+	if e != nil || u.IsAbs() || u.Host != "" || u.Path != "/admin/mcp/authorize" || u.Fragment != "" {
+		return ""
+	}
+	return u.String()
+}
+
+// OAuthSession reuses the authenticated admin session without exposing cookies.
+func (h *Handler) OAuthSession(r *http.Request) (string, bool) {
+	s, ok := h.authenticate(r)
+	return s.CSRFToken, ok
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,7 @@
   <p class="muted">管理客户端、通知渠道、路由和投递任务。</p>
   {{if .Error}}<div class="notice error" role="alert">{{.Error}}</div>{{end}}
   <form method="post" action="/admin/login" class="stack-form">
+    {{if .Next}}<input type="hidden" name="next" value="{{.Next}}">{{end}}
     <label>用户名<input name="username" autocomplete="username" maxlength="64" required autofocus></label>
     <label>密码<input type="password" name="password" autocomplete="current-password" maxlength="256" required></label>
     <button type="submit" class="button primary full">安全登录</button>

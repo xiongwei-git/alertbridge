@@ -23,6 +23,8 @@ type Config struct {
 	Verifier        auth.Verifier
 	BearerVerifier  auth.BearerVerifier
 	Admin           http.Handler
+	MCP             http.Handler
+	OAuth           http.Handler
 	Routes          map[string]map[string][]string
 	EnabledChannels map[string]bool
 	ResolveTargets  func(string, string) []string
@@ -86,6 +88,16 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("/readyz", server.ready)
 	mux.HandleFunc("/api/v1/events", server.events)
 	mux.HandleFunc("/api/v1/notifications", server.notifications)
+	if cfg.MCP != nil {
+		mux.Handle("/mcp", cfg.MCP)
+	}
+	if cfg.OAuth != nil {
+		mux.Handle("/admin/mcp/authorize", cfg.OAuth)
+		mux.Handle("/oauth/", cfg.OAuth)
+		mux.Handle("/.well-known/oauth-authorization-server", cfg.OAuth)
+		mux.Handle("/.well-known/oauth-protected-resource", cfg.OAuth)
+		mux.Handle("/.well-known/oauth-protected-resource/mcp", cfg.OAuth)
+	}
 	mux.HandleFunc("/hooks/", server.legacyHookGone)
 	if cfg.Admin != nil {
 		mux.Handle("/admin", cfg.Admin)

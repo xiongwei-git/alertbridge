@@ -4,7 +4,7 @@
 
 AlertBridge 是面向个人、小团队和单节点运维环境的轻量通知网关。外部服务通过简单通知或完整事件 API 提交消息；AlertBridge 负责认证、路由、静默、去重、持久化排队、失败重试和多渠道投递。
 
-它采用 Go 单进程、SQLite 和服务端渲染后台，不依赖 Redis、PostgreSQL、Node.js 或 CDN。生产镜像基于 `scratch`，参考镜像约 5.5 MB；Compose 默认限制为 128 MiB 内存和 0.5 CPU。
+它采用 Go 单进程、SQLite 和服务端渲染后台，不依赖 Redis、PostgreSQL、Node.js 或 CDN。生产镜像基于 `scratch`；加入官方 MCP SDK 和 Dots OAuth 后，本地 Docker E2E 参考镜像约 21.5 MB、空闲内存约 14 MiB。Compose 默认限制为 128 MiB 内存和 0.5 CPU。
 
 <img width="1510" height="1290" alt="image" src="https://github.com/user-attachments/assets/5d362c39-163f-460e-8ad2-a907099e3bf9" />
 
@@ -45,7 +45,7 @@ secrets/admin_password
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.3.1/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.4.0/compose.yaml
 ```
 
 创建仅当前账户可进入的 Secret 目录和部署参数。管理员密码至少 16 字节，不要使用项目内置的通用密码：
@@ -55,7 +55,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.3.1' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.4.0' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -119,6 +119,10 @@ curl --fail-with-body --silent --show-error \
 ```
 
 服务会生成来源、事件 ID 和时间，状态固定为 `info`。轻量入口在通知持久化入队后返回 `200 OK`，兼容只把 HTTP 200 视为成功的宝塔自定义消息通道；响应中的 `outcome=queued` 表示等待异步投递，最终结果请在后台“投递记录”确认。因此该入口不能创建或关闭活跃故障；需要幂等、防重放、动态路由或 `firing/resolved` 时使用 HMAC 完整事件接口。令牌只能放在 `Authorization` 请求头，不能放进 URL。
+
+## Agent 查询
+
+Agent 可通过可选的只读 `/mcp` 查询历史告警、详情与活跃故障。Dots 使用 OAuth + PKCE，复用已有管理员登录确认授权；Codex/OpenClaw 也可使用独立的固定 Bearer。它复用当前进程与 SQLite，默认关闭。Dots 部署只需配置公网 HTTPS 根地址 `ALERTBRIDGE_PUBLIC_URL` 和允许读取的 `ALERTBRIDGE_MCP_ROUTES`，无需额外账号或身份服务。配置方法、撤销和连接步骤见 [MCP 接入指南](docs/mcp.md)。
 
 ## 完整事件签名
 
