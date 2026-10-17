@@ -32,6 +32,7 @@ var assets embed.FS
 const sessionCookie = "alertbridge_admin"
 
 type Config struct {
+	OIDC            *OIDC
 	Database        *store.Store
 	Gateway         *runtimecfg.Manager
 	Username        string
@@ -52,6 +53,8 @@ type Handler struct {
 }
 
 type pageData struct {
+	OIDCEnabled          bool
+	PasswordFallback     bool
 	Title                string
 	Active               string
 	CSRF                 string
@@ -161,6 +164,14 @@ func New(cfg Config) (*Handler, error) {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.adminHeaders(w)
+	switch r.URL.Path {
+	case "/auth/oidc/login":
+		h.oidcLogin(w, r)
+		return
+	case "/auth/oidc/callback":
+		h.oidcCallback(w, r)
+		return
+	}
 	if r.URL.Path == "/admin/assets/app.css" {
 		h.serveAsset(w, r, "text/css; charset=utf-8", h.css)
 		return
@@ -248,8 +259,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost && h.cfg.OIDC != nil && !h.cfg.OIDC.cfg.PasswordFallback {
+		h.renderError(w, http.StatusForbidden, "备用密码登录未启用")
+		return
+	}
 	if r.Method == http.MethodGet {
-		h.render(w, http.StatusOK, "login.html", pageData{Title: "登录", Next: oauthLoginNext(r.URL.Query().Get("next"))})
+		h.render(w, http.StatusOK, "login.html", pageData{Title: "登录", Error: oidcLoginError(r), Next: oauthLoginNext(r.URL.Query().Get("next"))})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -842,6 +857,10 @@ func (h *Handler) renderError(w http.ResponseWriter, status int, message string)
 }
 
 func (h *Handler) render(w http.ResponseWriter, status int, name string, data pageData) {
+	data.OIDCEnabled = h.cfg.OIDC != nil
+	data.PasswordFallback = h.cfg.OIDC == nil || h.cfg.OIDC.cfg.PasswordFallback
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	if err := h.templates[name].ExecuteTemplate(w, "layout", data); err != nil {
@@ -925,4 +944,11 @@ func routeOptions(clients []runtimecfg.ClientView, routes []runtimecfg.RouteView
 func methodNotAllowed(w http.ResponseWriter, allow string) {
 	w.Header().Set("Allow", allow)
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func oidcLoginError(r *http.Request) string {
+	if r.URL.Query().Get("oidc_error") != "" {
+		return "登录未完成或身份未获授权，请重新尝试。"
+	}
+	return ""
 }

@@ -66,7 +66,12 @@ func main() {
 		logger.Error("initialize dynamic configuration", "error", err)
 		os.Exit(1)
 	}
-	adminUI, err := admin.New(admin.Config{Database: database, Gateway: gateway, Username: boot.Credential.Username, PasswordHash: boot.Credential.PasswordHash, SessionLifetime: cfg.Admin.SessionLifetime, SecureCookie: cfg.Admin.SecureCookie, DisplayLocation: cfg.Display.Location, Logger: logger})
+	oidcLogin, err := admin.LoadOIDC(ctx, os.Getenv("ALERTBRIDGE_OIDC_CONFIG_FILE"))
+	if err != nil {
+		logger.Error("configure admin OIDC", "error", err)
+		os.Exit(1)
+	}
+	adminUI, err := admin.New(admin.Config{OIDC: oidcLogin, Database: database, Gateway: gateway, Username: boot.Credential.Username, PasswordHash: boot.Credential.PasswordHash, SessionLifetime: cfg.Admin.SessionLifetime, SecureCookie: cfg.Admin.SecureCookie, DisplayLocation: cfg.Display.Location, Logger: logger})
 	if err != nil {
 		logger.Error("initialize admin console", "error", err)
 		os.Exit(1)

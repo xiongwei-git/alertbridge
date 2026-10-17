@@ -364,3 +364,38 @@ curl -fsS http://127.0.0.1:18080/readyz
 ## 开源展示站与生产服务隔离
 
 个人开源集合和 AlertBridge 模拟 Demo 是独立静态产物，见 [官网部署](showcase-deployment.md)。它不需要升级运行镜像、复制数据库或暴露后台；域名、根目录和发布流程均与现有服务分离。
+
+## 可选 Tinyauth OIDC 统一登录
+
+在宿主机私有目录（0700）创建 JSON 文件，属主设为容器 UID 10001、权限 0400。实际 Secret 只在服务器生成保存，不粘贴到终端输出、Git 或浏览器。字段如下（仅占位示例）：
+
+```json
+{
+  "issuer": "https://auth.example.com",
+  "client_id": "independent-alertbridge-client",
+  "client_secret": "<server-generated-high-entropy-secret>",
+  "redirect_url": "https://notify.example.com/auth/oidc/callback",
+  "admin_subject": "<explicitly-registered-client-specific-subject>",
+  "password_fallback": true
+}
+```
+
+在 `.env` 设置 `ALERTBRIDGE_OIDC_CONFIG_FILE` 为该文件绝对路径，以 `docker compose -f compose.yaml -f compose.oidc.yaml` 管理服务。基础 Compose 不启用 OIDC，不影响原密码部署。发现、授权、Token、JWKS 必须使用配置 issuer 的 HTTPS 主机；仅接受 RS256。不要让健康检查、通知接口或整个域名经过统一 auth_request。
+
+先核对线上 Tinyauth 镜像 revision、subject 算法和账号的精确大小写。每个应用新增独立 Client，精确允许 callback，采用 file-backed client secret。保留其他 Client、账号/TOTP、数据与签名密钥；不能照搬另一个 Client 的 sub，也不能以首次登录自动授予管理员。PKCE S256 即使发现文档漏报能力也发送，部署前需核对当前版本实现并通过真实登录验证。
+
+Nginx 在本应用站点中新增精确 callback 代理，保留实际 upstream/header 设置，并在这个 location 内设置 `access_log off; error_log /dev/null crit;`。不得在应用、反代或错误报告中记录完整 callback URL。用宝塔 ProxyWriteConfig 保持面板与 Nginx 配置一致；检查 nginx -t 后平滑重载。不要把包含 code/state 的页面截图、URL 或网络日志保存到交付材料。
+
+生产变更前在服务器 0700 备份目录保存应用 Compose/.env、当前镜像 ID、代理配置及应用数据/主密钥恢复对。Tinyauth 保存 Compose/.env、当前镜像、持久目录与 SQLite backup API 生成的完整性检查通过的备份。只重建必要服务，Tinyauth 必须使用现有镜像；短暂不可用需提前告知。
+
+回滚应用时恢复原 Compose/.env 或撤销 OIDC overlay，启动之前记录的镜像；恢复本次代理配置，执行 nginx -t 再平滑重载。Tinyauth 正常回滚只移除本次新增 Client/挂载并使用原镜像重建，不恢复旧账号、TOTP 或数据库，不覆盖回滚期间更新的数据。数据备份只用于明确的数据故障恢复。
+
+隔离测试覆盖正确/其他身份、错误签名/issuer/audience/state/nonce、过期/重放、PKCE、会话轮换、退出和 CSRF；全量 Go、vet、release 与 Docker E2E 检查也需通过。生产验收还须用户实际完成密码、TOTP及首次授权：过渡页 → 点击 → 认证中心 → 后台，再验证应用退出和中心会话复用；HTTP 200、模拟 Token 或测试通过不能替代这一验收。
+
+### v0.5.0 发布与候选验收记录
+
+发布前的候选部署使用本地构建的 `alertbridge:oidc-20261017`（`v0.4.2-oidc.candidate`）。v0.5.0 正式镜像由 GHCR 发布，生产可使用经过平台摘要核验的 ACR 镜像切换。保留现有生产 Compose 中的 OIDC 文件 Secret 设置，日常仍使用 `docker compose`；只替换镜像地址与标签，不覆盖认证配置、数据库或密钥。迁移期备用密码登录由原服务器配置继续控制。
+
+实际浏览器已验证首次授权后返回后台、应用退出回到过渡页、再次点击后复用中心会话。密码/TOTP本次因中心会话有效未重新输入。完整安全负例与原通知/投递功能在隔离环境验证；生产仅执行只读健康/鉴权检查，没有发送测试通知或重建 Dots 授权。
+
+有效备份为 `/www/backups/alertbridge-oidc-20261017T142946Z`，必须包含 `BACKUP_COMPLETE`；两个独立 SQLite 备份已通过完整性检查。服务端执行 `python3 /www/backups/alertbridge-oidc-20261017T142946Z/rollback.py` 回退应用配置、代理和原镜像；附加 `--tinyauth` 仅增量移除本次 Client 并重建原认证中心镜像。脚本已语法验证，未实际回滚生产；不会恢复或覆盖业务数据库、账号、TOTP和签名密钥。回滚后需重新检查健康、登录及公开接口。

@@ -100,6 +100,7 @@ func New(cfg Config) http.Handler {
 	}
 	mux.HandleFunc("/hooks/", server.legacyHookGone)
 	if cfg.Admin != nil {
+		mux.Handle("/auth/oidc/", cfg.Admin)
 		mux.Handle("/admin", cfg.Admin)
 		mux.Handle("/admin/", cfg.Admin)
 	}

@@ -5,11 +5,19 @@
   <h1 id="login-title">登录管理后台</h1>
   <p class="muted">管理客户端、通知渠道、路由和投递任务。</p>
   {{if .Error}}<div class="notice error" role="alert">{{.Error}}</div>{{end}}
+  {{if .OIDCEnabled}}
+  <a class="button primary full" href="/auth/oidc/login{{if .Next}}?next={{.Next}}{{end}}">使用 Ted 个人认证服务登录</a>
+  <p class="muted">点击后前往个人认证中心。退出仅清除 AlertBridge 会话。</p>
+  {{end}}
+  {{if .PasswordFallback}}
+  {{if .OIDCEnabled}}<details><summary class="muted">备用密码登录</summary>{{end}}
   <form method="post" action="/admin/login" class="stack-form">
     {{if .Next}}<input type="hidden" name="next" value="{{.Next}}">{{end}}
     <label>用户名<input name="username" autocomplete="username" maxlength="64" required autofocus></label>
     <label>密码<input type="password" name="password" autocomplete="current-password" maxlength="256" required></label>
     <button type="submit" class="button primary full">安全登录</button>
   </form>
+  {{if .OIDCEnabled}}</details>{{end}}
+  {{end}}
 </section>
 {{end}}

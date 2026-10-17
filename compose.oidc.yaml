@@ -1,0 +1,11 @@
+# Optional server-side OIDC configuration. Keep the host directory 0700 and
+# set the file owner to container UID 10001, mode 0400.
+services:
+  alertbridge:
+    environment:
+      ALERTBRIDGE_OIDC_CONFIG_FILE: /run/secrets/oidc_config
+    secrets:
+      - oidc_config
+secrets:
+  oidc_config:
+    file: ${ALERTBRIDGE_OIDC_CONFIG_FILE:?set the absolute server-side OIDC configuration file}
