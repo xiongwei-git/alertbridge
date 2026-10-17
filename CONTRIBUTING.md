@@ -22,7 +22,7 @@ python3 test/site/test_example.py
 
 ## 网站
 
-`site/` 是无构建依赖的静态网站与浏览器模拟 Demo，运行 `python3 -m http.server 18083 --directory site` 后访问本机端口。GitHub Pages 与宝塔使用同一份文件。不要在 Demo 中加入生产地址、凭据、分析追踪或真实告警。
+`site/` 是无构建依赖的静态网站与浏览器模拟 Demo。运行 `./scripts/build-site.sh`，再执行 `python3 -m http.server 18083 --bind 127.0.0.1 --directory dist-site`；集合首页在 `/`，项目页在 `/alertbridge/`。正式网站由宝塔 Nginx 托管，发布和回滚见 [网站部署](docs/showcase-deployment.md)。不要在 Demo 中加入生产地址、凭据、分析追踪或真实告警。
 
 ## 安全与沟通
 

@@ -533,3 +533,10 @@ scroll-behavior:auto
 
 }
 
+
+/* Technical reference table: retain horizontal access on narrow viewports. */
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 16px 14px; border-bottom: 1px solid var(--line); }
+th { background: #eef2e9; font-weight: 600; }
+td code { white-space: nowrap; }

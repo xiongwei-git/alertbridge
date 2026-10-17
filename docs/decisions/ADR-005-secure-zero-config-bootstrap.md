@@ -55,3 +55,7 @@ Rejected by product decision. A single empty-state control plane is easier to re
 - The key volume must be backed up with the database volume. Losing either prevents a complete recovery.
 - The first login deliberately consumes memory for password hashing, but login verification is serialized and the Compose memory limit remains 128 MiB.
 - There is no static recovery password. Operators must protect their selected password and encrypted backups.
+
+## Amendment: optional authentication configuration
+
+As of v0.5.0, [ADR-013](ADR-013-admin-oidc.md) permits a restricted JSON Secret for optional administrator OIDC. This is authentication configuration, not a business configuration seed. Clients, channels and routes still start empty and are managed through the console. The bootstrap password and database/master-key recovery rules above remain in effect.

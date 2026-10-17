@@ -17,7 +17,6 @@ if out.exists():
 for name in ('index.html', 'style.css', 'demo.js', 'mark.svg'):
     shutil.copyfile(Path('site') / name, out / 'alertbridge' / name)
 shutil.copyfile('site/collection.html', out / 'index.html')
-(out / '.nojekyll').touch()
 entries = [f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(out).as_posix()}' for p in sorted(out.rglob('*')) if p.is_file()]
 (out / 'SHA256SUMS').write_text('\n'.join(entries) + '\n')
 print('Built dist-site/: collection at /, AlertBridge at /alertbridge/')

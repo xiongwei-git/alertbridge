@@ -2,6 +2,7 @@ openapi: 3.1.0
 info:
   title: AlertBridge API
   version: 1.4.1
+  description: Interface document revision, independent of the v0.5.0 application release. Administrator OIDC login does not replace notification HMAC/Bearer or MCP authorization.
 paths:
   /mcp:
     post:

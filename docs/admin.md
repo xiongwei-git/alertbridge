@@ -13,6 +13,16 @@
 
 `alertbridge-data` 和 `alertbridge-secrets` 必须作为一组备份。主密钥丢失后，SQLite 中的客户端和渠道密文无法恢复。
 
+## 可选 OIDC 登录
+
+v0.5.0 可通过服务器配置启用 OIDC，当前以 Tinyauth 验证。未启用时保留上述密码登录；启用后先显示过渡页，必须点击登录按钮才进入身份提供方。成功验证 issuer + subject 后建立本地管理员会话，用户名或邮箱不授予权限。
+
+`password_fallback=true` 时显示折叠的“备用密码登录”；false 时不显示该入口。当前 OIDC 按钮文字固定为“使用 Ted 个人认证服务登录”，不是可配置的提供方名称。配置方法见 [OIDC 部署](deployment.md#可选-tinyauth-oidc-统一登录)。
+
+退出只清除 AlertBridge 会话；如果身份提供方会话仍有效，再次点击登录可能不再要求密码或 TOTP。OIDC 临时 callback Cookie 使用 Secure、HttpOnly、SameSite=Lax 和 `/auth/oidc` 路径；普通管理会话仍使用上文的 Strict Cookie。不要保存含 code/state 的回调 URL。
+
+MCP OAuth 授权继续通过管理会话确认，管理员可以用密码或 OIDC 登录。后台“接入指南”撤销 MCP 授权不会退出身份提供方，也不会撤销独立固定 Bearer。三类凭据不能互换。
+
 ## 空系统配置顺序
 
 新部署不会预置示例客户端、默认路由或通知渠道：

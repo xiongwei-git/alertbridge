@@ -1,19 +1,22 @@
 # AlertBridge
 
-**One small, self-hosted bridge between your services, your notification channels, and your agents.**
+AlertBridge is a single-instance notification gateway written in Go with SQLite. It accepts authenticated HTTP events, routes them to Feishu, Telegram, ntfy or TLS SMTP, and records events, incidents and delivery attempts.
 
-AlertBridge receives authenticated events, routes them to Feishu, Telegram, ntfy or TLS SMTP, and records delivery attempts in SQLite. Go, one HTTP process, one database connection and one persistent worker. No Redis, Node.js runtime or external CDN for the admin console.
+[中文](README.md) · [Website and simulated demo](https://opensource.tedxiong.com/alertbridge/) · [Deployment](docs/deployment.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md)
 
-[中文](README.md) · [Interactive demo](https://xiongwei-git.github.io/alertbridge/alertbridge/) · [Deployment](docs/deployment.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md)
+Current release: **v0.5.0**. This release adds optional administrator OIDC login without changing notification APIs, MCP authorization or business data formats.
 
-## Why use it?
+## Features
 
-- Keep channel credentials and retry logic out of every application.
-- Track `firing` / `resolved` incidents and deduplicate repeated events.
-- Inspect queued, sent and failed deliveries; acceptance is not delivery confirmation.
-- Give agents read-only access to permitted routes through MCP, with OAuth + PKCE for Dots.
+- HMAC-SHA256 event API with replay protection, event ID idempotency and `firing` / `resolved` incident state.
+- Header-only Bearer notification API with server-bound source, route, severity and rate limit.
+- Routing, deduplication, silence windows, a persistent SQLite queue, retries and dead-letter requeue.
+- Server-rendered admin console with password login and optional OIDC Authorization Code + PKCE S256. Administrator access is bound to an explicit issuer and subject; usernames and email addresses do not grant access.
+- Optional read-only MCP: `list_alerts`, `get_alert`, `list_active_incidents`. Dots connects through OAuth; clients supporting custom headers may use an independent static Bearer.
 
-Use it for personal infrastructure, small teams and single-node operations. It is not a monitoring collector, highly available paging platform, escalation system or autonomous remediation service.
+One HTTP process, one SQLite connection and one persistent worker. No Redis, Node.js runtime or external CDN for the admin console. The container runs as UID 10001 with a read-only root filesystem and no Linux capabilities.
+
+Use it for personal infrastructure, small teams and single-node operations. Multi-instance HA, alert aggregation, on-call scheduling, escalation, acknowledgement, automatic remediation and third-party inbound parsers are not implemented.
 
 ## Try locally
 
@@ -23,18 +26,28 @@ cd alertbridge
 ./scripts/local-demo.sh up
 ```
 
-Requires Docker Compose, OpenSSL and curl. The script prints the generated admin password and opens a local-only HTTP environment at `http://127.0.0.1:18081/admin/`. Create a channel, route and client in the console. Never expose this local environment publicly.
+Requires Docker Compose, OpenSSL and curl. Open `http://127.0.0.1:18081/admin/` with the generated password. Configure a channel, route and client. This HTTP environment is local-only.
 
-For a browser-only simulation, serve `site/` with `python3 -m http.server 18083 --directory site`. This demo uses fictional data and sends no notifications.
+The [browser demo](https://opensource.tedxiong.com/alertbridge/#demo) uses fictional data, sends no requests to a gateway, and does not test real authentication or delivery. To preview its source, run `./scripts/build-site.sh` then `python3 -m http.server 18083 --bind 127.0.0.1 --directory dist-site`.
 
-Production uses the published GHCR image, HTTPS at your reverse proxy, and loopback-only application exposure. Follow the [deployment guide](docs/deployment.md); back up the database and encryption-key volumes together. Detailed operating documentation is currently in Chinese.
+## Deploy
 
-## Integrate
+Use the official `ghcr.io/xiongwei-git/alertbridge:v0.5.0` image and matching versioned Compose files. Follow the [deployment guide](docs/deployment.md) for file-backed bootstrap credentials and HTTPS reverse proxy setup. Bind the application to loopback only. Back up the database and master-key volumes together.
 
-- `POST /api/v1/notifications`: header-only Bearer token, server-bound route and severity, one-off `info` notifications.
-- `POST /api/v1/events`: HMAC-SHA256, replay protection, idempotency and incident lifecycle. See [Python example](examples/python/README.md).
-- `/mcp`: optional, read-only `list_alerts`, `get_alert`, `list_active_incidents`; no acknowledgement, mutation or automatic wake-up.
+OIDC is optional and has been tested with Tinyauth. It requires the versioned `compose.oidc.yaml` overlay and a restricted server-side JSON Secret. Keep the overlay active for all Compose operations, and back up its configuration separately. Administrator OIDC and MCP OAuth are separate flows: provider tokens are not issued to agents. Logout clears only the local application session.
+
+Detailed operational documentation is currently in Chinese.
+
+## Interfaces
+
+| Endpoint | Authentication | Purpose |
+| --- | --- | --- |
+| `POST /api/v1/notifications` | Constrained Bearer | One-off `info` notifications; HTTP 200 |
+| `POST /api/v1/events` | HMAC | Idempotency, replay protection and incident lifecycle; HTTP 202 |
+| `/mcp` | Independent OAuth or static Bearer | Route-scoped read-only queries |
+
+A successful notification response is not delivery confirmation. Inspect `outcome` and delivery records. See the [Python HMAC example](examples/python/README.md). For the ten latest MCP events, use `list_alerts` with `{"order":"desc","limit":10}`.
 
 ## Contribute
 
-Read [CONTRIBUTING](CONTRIBUTING.md), [security policy](SECURITY.md), [code of conduct](CODE_OF_CONDUCT.md) and [decisions](docs/decisions/). Licensed under [Apache-2.0](LICENSE). Maintained on a best-effort basis; no availability or support SLA is promised.
+Read [CONTRIBUTING](CONTRIBUTING.md), [security policy](SECURITY.md), [code of conduct](CODE_OF_CONDUCT.md) and [decisions](docs/decisions/). Licensed under [Apache-2.0](LICENSE). Maintained on a best-effort basis without an availability or support SLA.

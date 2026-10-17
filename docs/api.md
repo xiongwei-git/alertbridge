@@ -1,5 +1,7 @@
 # AlertBridge v1 API 契约
 
+本文描述 v1 通知 API；OpenAPI 的 `info.version` 是接口文档版本，独立于应用发布版本 v0.5.0。管理员 OIDC 不改变以下 API 的认证。
+
 除以下通知入站 API 外，可选 `/mcp` 提供独立授权的只读 Agent 查询。它使用 MCP JSON-RPC，而非 REST 入站契约；详见 [MCP 接入指南](mcp.md)。现有两个通知接口的认证和响应不变。
 
 MCP `list_alerts` 支持 `order=asc|desc`，默认保持正序；最近 10 条使用 `{"order":"desc","limit":10}`。按服务接收时间、记录 ID 排序，分页游标绑定方向，旧游标仍兼容正序。仅正序返回增量 `checkpoint`，倒序更新需重新查询第一页。
@@ -63,9 +65,19 @@ Content-Type: application/json
 
 成功接收返回 `202 Accepted`。这里的“接收”表示认证、校验、事件记录和投递任务已持久化，不表示外部通知渠道已经收到消息。
 
-必须提供四个 HMAC 请求头：`X-Notify-Client`、`X-Notify-Timestamp`、`X-Notify-Nonce`、`X-Notify-Signature`。签名算法见项目 README。请求体最大 32 KiB，只接受 `application/json`，未知字段会被拒绝。
+必须提供四个 HMAC 请求头：`X-Notify-Client`、`X-Notify-Timestamp`、`X-Notify-Nonce`、`X-Notify-Signature`。签名算法见下节。请求体最大 32 KiB，只接受 `application/json`，未知字段会被拒绝。
 
 这是 AlertBridge 唯一的完整事件生命周期契约。调用方负责把自身事件映射成下面的统一事件模型，再对实际发送的原始 JSON 字节签名。AlertBridge 不根据第三方产品名称猜测或转换其私有格式。
+
+### HMAC 签名
+
+```text
+body_hash = hex(SHA256(raw_request_body))
+message   = timestamp + "\n" + nonce + "\n" + body_hash
+signature = hex(HMAC-SHA256(client_secret, message))
+```
+
+`timestamp` 是请求头中的 Unix 秒字符串，`nonce` 每次请求随机生成；摘要和签名为十六进制。签名后不要重新序列化 JSON。重试保留事件 ID，但使用新的时间戳、Nonce 和对应签名。可执行实现见 [Python 示例](../examples/python/README.md)。
 
 ### 请求
 

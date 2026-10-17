@@ -3,37 +3,37 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="AlertBridge：轻量自托管通知网关，让服务统一发出消息，让 Agent 安全读取告警。">
-<title>AlertBridge — 把通知接起来</title>
+<meta name="description" content="AlertBridge v0.5.0：Go + SQLite 单实例通知网关，支持 HMAC 事件、持久投递、只读 MCP 与可选管理员 OIDC。">
+<title>AlertBridge — Go + SQLite 通知网关</title>
 <link rel="icon" href="mark.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css">
-<script src="demo.js" defer>
+<link rel="stylesheet" href="style.css?v=0.5.0-docs.1">
+<script src="demo.js?v=0.5.0-docs.1" defer>
 </script>
 </head>
 <body>
 <a class="skip" href="#main">跳到正文</a>
 <header class="wrap nav">
 <a class="brand" href="./">
-<img src="mark.svg" alt="" width="30" height="30">AlertBridge<span class="tag">OPEN SOURCE</span>
+<img src="mark.svg" alt="" width="30" height="30">AlertBridge<span class="tag">v0.5.0</span>
 </a>
 <nav aria-label="主导航">
 <a href="../">项目集合</a>
 <a href="#demo">交互演示</a>
 <a href="#start">开始使用</a>
-<a href="#agents">Dots / MCP</a>
+<a href="#agents">MCP</a>
+<a href="#oidc">OIDC</a>
 <a href="https://github.com/xiongwei-git/alertbridge">GitHub ↗</a>
 </nav>
 </header>
 <main id="main">
 <section class="wrap hero">
-<div class="eyebrow">SELF-HOSTED · GO + SQLITE · APACHE-2.0</div>
-<h1>服务各司其职。<br>通知，<em>交给一座桥。</em>
-</h1>
-<p class="intro">把分散在脚本里的通知逻辑，收进一个轻量网关。<br>统一接入、可靠排队、多渠道投递，再让 Agent 读懂发生了什么。</p>
+<div class="eyebrow">GO + SQLITE / APACHE-2.0</div>
+<h1>自托管通知网关<br><em>AlertBridge</em></h1>
+<p class="intro">接收 HTTP 事件，按路由投递到飞书、Telegram、ntfy 或 SMTP。<br>记录故障状态、队列任务和投递结果，提供管理后台与只读 MCP 查询。</p>
 <div class="actions">
-<a class="button" href="#demo">亲手走一遍流程 <span>↓</span>
+<a class="button" href="#demo">查看模拟 Demo <span>↓</span>
 </a>
-<a class="button secondary" href="#start">部署自己的网关 ↗</a>
+<a class="button secondary" href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/deployment.md">部署文档 ↗</a>
 </div>
 <div class="hero-note">一个进程 · 一份 SQLite · 一个持久投递 Worker</div>
 <div class="bridge" aria-label="业务服务通过 AlertBridge 发送到通知渠道，Agent 只读查询">
@@ -60,27 +60,39 @@
 <section class="band">
 <div class="wrap reasons">
 <article>
-<span class="number">01 / LESS GLUE</span>
-<h2>每个服务，少写一套通知。</h2>
-<p>业务只描述发生了什么。渠道密钥、投递路由与失败重试，集中在网关管理。</p>
+<span class="number">01 / INGESTION</span>
+<h2>HTTP 事件接入</h2>
+<p>完整事件使用 HMAC，支持幂等和防重放。轻量通知使用请求头 Bearer，路由与级别由服务端固定。</p>
 </article>
 <article>
-<span class="number">02 / MORE EVIDENCE</span>
-<h2>入队之后，仍有迹可循。</h2>
-<p>区分已接收、等待投递与实际送达。查看尝试次数和死信，追踪故障发生与恢复。</p>
+<span class="number">02 / DELIVERY</span>
+<h2>持久队列与投递记录</h2>
+<p>事件与投递任务写入 SQLite。单 Worker 执行投递、退避重试和死信处理；HTTP 接收成功不等于渠道送达。</p>
 </article>
 <article>
-<span class="number">03 / YOUR CONTROL</span>
-<h2>数据留在自己的服务里。</h2>
-<p>单实例自托管，服务端渲染后台。Agent 只读取指定路由的告警，不修改故障。</p>
+<span class="number">03 / ADMINISTRATION</span>
+<h2>管理后台与登录</h2>
+<p>服务端渲染后台管理渠道、客户端、路由和静默。支持本地密码与可选管理员 OIDC，不需要前端运行时。</p>
 </article>
 </div>
+</section>
+<section class="wrap section" id="interfaces">
+<div class="eyebrow">API CONTRACTS</div>
+<h2>接口与认证</h2>
+<div class="table-scroll"><table>
+<thead><tr><th>接口</th><th>凭据</th><th>用途</th></tr></thead>
+<tbody>
+<tr><td><code>POST /api/v1/events</code></td><td>HMAC-SHA256</td><td>事件 ID 幂等、时间窗、Nonce、故障发生与恢复；HTTP 202</td></tr>
+<tr><td><code>POST /api/v1/notifications</code></td><td>轻量 Bearer 令牌</td><td>固定路由、级别和 info 状态的一次性通知；HTTP 200</td></tr>
+<tr><td><code>/mcp</code></td><td>独立 OAuth / Bearer</td><td>授权路由内的只读查询；不复用通知令牌</td></tr>
+</tbody></table></div>
+<p>通知 API 的 outcome 区分 queued、suppressed 与 duplicate。最终投递结果在管理后台查询。<a href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/api.md">API 契约</a> / <a href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/openapi.yaml">OpenAPI</a></p>
 </section>
 <section class="wrap section" id="demo">
 <div class="section-heading">
 <div>
-<div class="eyebrow">TRY THE FLOW</div>
-<h2>从发生，到恢复。</h2>
+<div class="eyebrow">SIMULATED DEMO</div>
+<h2>故障生命周期演示</h2>
 </div>
 <p>浏览器内模拟 · 虚构数据 · 不发送真实通知<br>真实认证、持久化和重试请用 Docker Demo 验证。</p>
 </div>
@@ -95,7 +107,7 @@
 <div class="demo-controls">
 <span class="number">模拟事件</span>
 <h3>一台服务器的磁盘告警</h3>
-<p>依次体验故障、重复上报与恢复，看看网关如何维护同一个故障。</p>
+<p>发送相同路由与去重键的 firing 和 resolved。演示假定重复事件在去重窗口内，不模拟真实认证或 OIDC。</p>
 <button id="fire" type="button">1. 发生故障 <code>firing</code>
 </button>
 <button id="repeat" type="button" disabled>2. 重复上报 <code>firing</code>
@@ -133,7 +145,7 @@
 <div>
 <span class="number">READ-ONLY AGENT</span>
 <h3>“最近发生了什么？”</h3>
-<p>演示如何按接收时间倒序读取最近 10 条。</p>
+<p>模拟 list_alerts 的倒序参数，只查询本页虚构事件；输出不是实际 MCP 响应 Schema。</p>
 </div>
 <div>
 <button id="query" class="button secondary" type="button">模拟 list_alerts 查询</button>
@@ -147,11 +159,11 @@
 </noscript>
 </section>
 <section class="wrap section" id="start">
-<div class="eyebrow">TWO WAYS TO START</div>
-<h2>先试用，再接入自己的服务。</h2>
+<div class="eyebrow">INSTALLATION</div>
+<h2>本地测试与生产部署</h2>
 <div class="split">
 <article class="guide">
-<span class="number">01 / LOCAL EXPERIENCE</span>
+<span class="number">01 / LOCAL DOCKER</span>
 <h3>运行真实的本地后台</h3>
 <p>需要 Docker Compose、OpenSSL 和 curl。临时凭据由脚本生成；在空后台配置渠道、路由和客户端。</p>
 <pre>git clone https://github.com/xiongwei-git/alertbridge.git
@@ -160,9 +172,9 @@ cd alertbridge
 <p class="muted">打开 http://127.0.0.1:18081/admin/<br>本地 HTTP 环境仅供测试，不要暴露到公网。</p>
 </article>
 <article class="guide">
-<span class="number">02 / YOUR INFRASTRUCTURE</span>
-<h3>部署你的通知中枢</h3>
-<p>使用官方 GHCR 镜像与 Docker Compose。应用绑定 loopback，由 Nginx 提供 HTTPS。数据库与主密钥卷成对备份。</p>
+<span class="number">02 / PRODUCTION</span>
+<h3>部署 v0.5.0</h3>
+<p>使用 ghcr.io/xiongwei-git/alertbridge:v0.5.0 和同版本 Compose。端口只绑定 loopback，Nginx 提供 HTTPS；数据库与主密钥卷成对备份。</p>
 <div class="link-list">
 <a href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/deployment.md">生产部署与恢复指南 ↗</a>
 <a href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/api.md">完整事件与轻量通知契约 ↗</a>
@@ -174,10 +186,10 @@ cd alertbridge
 <section class="band" id="agents">
 <div class="wrap section split">
 <div>
-<div class="eyebrow">BRING YOUR AGENT</div>
-<h2>Dots 读事实，<br>你保留控制权。</h2>
-<p class="intro small">用 OAuth + PKCE 授权，让 Agent 查询指定路由的历史告警、投递详情和活跃故障。</p>
-<a class="button" href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/dots-example.md">按示例连接 Dots ↗</a>
+<div class="eyebrow">READ-ONLY MCP</div>
+<h2>MCP 与 Dots 接入</h2>
+<p class="intro small">/mcp 默认关闭。Dots 使用 OAuth + PKCE，支持自定义请求头的客户端也可使用独立固定 Bearer。所有查询受服务端路由范围限制。</p>
+<a class="button" href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/dots-example.md">Dots 配置示例 ↗</a>
 </div>
 <div class="agent-card">
 <span class="number">THREE TOOLS. READ ONLY.</span>
@@ -193,22 +205,35 @@ cd alertbridge
 </div>
 </div>
 </section>
+<section class="wrap section" id="oidc">
+<div class="eyebrow">v0.5.0 / ADMINISTRATOR LOGIN</div>
+<h2>可选管理员 OIDC</h2>
+<div class="split">
+<div><h3>身份提供方验证，本地会话</h3>
+<p>当前以 Tinyauth 验证。使用 Authorization Code、PKCE S256、state、nonce 和 RS256 ID Token；只允许服务器配置的 issuer + subject 成为管理员。用户名和邮箱不授予权限。</p>
+<p>身份提供方 Token 不持久化。登录页等待点击，退出只清除本应用会话；可通过配置保留备用密码入口。</p>
+</div>
+<div class="guide"><h3>与 MCP OAuth 分开配置</h3>
+<p>管理员 OIDC 是 AlertBridge 向身份提供方登录；MCP OAuth 是 AlertBridge 向 Dots 签发只读令牌。两者的 Client、回调地址和凭据不能互换。</p>
+<p>部署需加载 compose.oidc.yaml，并挂载受限 JSON Secret。日常重建、备份和回滚都需保留 overlay 与配置文件。此静态 Demo 不提供真实登录。</p>
+<a href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/deployment.md#可选-tinyauth-oidc-统一登录">OIDC 配置与回滚 ↗</a>
+</div></div></section>
 <section class="wrap section">
-<div class="eyebrow">SMALL BY DESIGN</div>
-<h2>边界清楚，才能放心使用。</h2>
+<div class="eyebrow">SCOPE</div>
+<h2>适用范围与限制</h2>
 <div class="split">
 <div>
-<h3>适合这样的需求</h3>
-<p>个人基础设施、小团队、单节点运维。希望统一脚本通知，有持久队列、清晰投递记录，并允许 Agent 按需读取。</p>
+<h3>单节点运维</h3>
+<p>适用于个人基础设施和小团队：统一脚本通知、跟踪故障发生与恢复、查询渠道投递结果。运行时为一个 HTTP 进程、一个 SQLite 连接和一个投递 Worker。</p>
 </div>
 <div>
-<h3>需要其他方案的场景</h3>
+<h3>未实现能力</h3>
 <p>监控采集、多实例高可用、值班排班、告警聚合、超时升级、告警确认和自动修复，当前不在项目能力范围内。</p>
 </div>
 </div>
 <div class="closing">
-<h3>把它变成你愿意长期使用的工具。</h3>
-<p>从一个最小接入案例、一份更清楚的文档，或一个可复现的问题开始。</p>
+<h3>文档与贡献</h3>
+<p>提交问题时提供版本、复现步骤和脱敏日志。公共 API 变更需同步接口文档；架构与安全边界变更需说明取舍。</p>
 <a href="https://github.com/xiongwei-git/alertbridge/blob/main/CONTRIBUTING.md">参与贡献 ↗</a>
 <a href="https://github.com/xiongwei-git/alertbridge/blob/main/SECURITY.md">安全政策 ↗</a>
 <a href="https://github.com/xiongwei-git/alertbridge/blob/main/CHANGELOG.md">版本记录 ↗</a>
@@ -217,7 +242,7 @@ cd alertbridge
 </main>
 <footer class="wrap footer">
 <span>AlertBridge / by xiongwei-git</span>
-<span>Apache-2.0 · 独立开源项目 · 非 OpenAI 官方产品</span>
+<span>v0.5.0 · Apache-2.0 · 单实例部署</span>
 <a href="https://github.com/xiongwei-git/alertbridge">Source ↗</a>
 </footer>
 </body>

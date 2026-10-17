@@ -1,4 +1,4 @@
-# Python：从测试到故障恢复
+# Python HMAC 事件调用示例
 
 Python 3 标准库即可，无额外依赖。签名覆盖实际发送的 UTF-8 原始字节；每次调用生成独立事件 ID、时间戳与 Nonce。脚本会真实提交事件，请优先使用本地 Demo 或专用测试路由。
 
@@ -23,5 +23,7 @@ python3 examples/python/send_event.py --status resolved --dedupe-key example-dis
 ```
 
 保持客户端、路由和去重键一致：首次创建故障，第二次去重，最后恢复。去重窗口与路由配置以实际服务为准，勿高频运行。连接生产环境时改用 HTTPS 根地址并显式确认测试范围。脚本拒绝非 loopback 明文 HTTP、带路径/账号的 URL 和 HTTP 重定向。
+
+管理员启用 OIDC 不改变此脚本的 HMAC 凭据或调用方法。不要在脚本里登录管理员后台或使用身份提供方 Token。
 
 只发一次性消息时可选轻量 Bearer API，见 [API 文档](../../docs/api.md)，不要把 HMAC 密钥当作 Bearer 令牌。

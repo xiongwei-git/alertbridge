@@ -34,7 +34,7 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.4.2/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.0/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
@@ -49,7 +49,7 @@ umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.4.2' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.5.0' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -169,7 +169,7 @@ location = /.well-known/oauth-protected-resource/mcp {
 }
 ```
 
-执行 `nginx -t` 成功后平滑重载，确认两个 OAuth 发现接口返回 JSON；未认证访问 `/mcp` 返回带 `WWW-Authenticate` 的 401 是正常行为。
+执行 `nginx -t` 成功后平滑重载，确认上述三个 OAuth 发现路径返回 JSON；未认证访问 `/mcp` 返回带 `WWW-Authenticate` 的 401 是正常行为。
 
 ## 7. 首次后台配置
 
@@ -179,7 +179,7 @@ location = /.well-known/oauth-protected-resource/mcp {
 https://你的域名/admin/
 ```
 
-使用初始化时显示的账号密码登录，然后：
+基础部署使用初始化时保存的账号密码登录；已启用 OIDC 的部署使用登录页按钮，然后：
 
 1. 在“通知渠道”保存渠道凭据并测试发送；
 2. 在“路由规则”建立每个 `routing_key + severity` 的目标渠道；
@@ -241,43 +241,40 @@ URL：https://你的域名/api/v1/notifications
 7. 新 Nonce 配相同 `event_id` 得到 `outcome=duplicate`，渠道不重复发送；
 8. 日志中没有 Webhook、Token、密码、签名或完整请求正文。
 
-## 9. 日常运维
+## 9. Compose 文件选择
+
+基础部署使用 `docker compose`。若启用本文末尾的 OIDC overlay，将以下配置加入 `.env`：
+
+```dotenv
+COMPOSE_FILE=compose.yaml:compose.oidc.yaml
+ALERTBRIDGE_OIDC_CONFIG_FILE=/www/wwwroot/alertbridge/secrets/oidc.json
+```
+
+Linux Compose 会从 `.env` 的 `COMPOSE_FILE` 选择两个文件，后续 `config`、`pull`、`up`、`stop` 和 `start` 都沿用 OIDC Secret 挂载。首次启用和排错时也可显式使用 `docker compose -f compose.yaml -f compose.oidc.yaml ...`。不要在只加载基础 Compose 的情况下重建已启用 OIDC 的服务。
+
+如果部署已将等价 OIDC 设置合入自己的 Compose，就保留原文件和管理方式，不要直接覆盖为仓库的基础文件。
+
+## 10. 日常运维与升级
 
 ```sh
 docker compose ps
 docker compose logs --tail=100 alertbridge
-docker compose logs -f --tail=100 alertbridge
-docker compose up -d
-docker compose down  # 停止并保留两个数据卷
-```
-
-不要在生产环境执行 `docker compose down -v`。它会删除 `alertbridge_alertbridge-data` 和 `alertbridge_alertbridge-secrets`。
-
-## 10. 升级与回滚
-
-升级前先执行第 11 节备份。记录当前版本后编辑 `.env`：
-
-```sh
-grep '^ALERTBRIDGE_IMAGE_TAG=' .env
-```
-
-把 `ALERTBRIDGE_IMAGE_TAG` 改为已发布的新版本，然后：
-
-```sh
 docker compose pull
-docker compose up -d
-docker compose ps
+docker compose up -d alertbridge
 curl -fsS http://127.0.0.1:18080/readyz
-docker compose logs --tail=100 alertbridge
 ```
 
-MCP 工具增加参数后（例如 v0.4.2 的告警排序），升级镜像后在插件详情页刷新工具定义。已有 OAuth 授权、路由和业务配置无需重建；v0.4.2 没有数据库迁移。
+升级前备份，记录旧镜像标签、镜像 ID、Compose 文件和代理配置。修改 `.env` 的 `ALERTBRIDGE_IMAGE_TAG` 为已发布版本，再执行以上检查。不要将 `main` 的 Compose 与旧镜像混用；启用 OIDC 时同时保留匹配版本的 overlay。
 
-回滚时把镜像标签改回旧版本，重新执行以上命令。若 Release 说明包含不可逆数据库迁移，还必须恢复与旧镜像匹配的两个卷，不能只回滚镜像。
+v0.5.0 增加管理员 OIDC，不修改通知 API、MCP 授权和业务数据格式。未启用 OIDC 的部署可以只升级镜像；启用 OIDC 的部署还依赖受限配置文件和身份提供方发现接口。MCP 工具 Schema 变化后，在客户端刷新工具定义。
+
+回滚镜像前核对 Release 的数据兼容说明。v0.5.0 如需退回 v0.4.x，须同时撤销 OIDC overlay/配置并恢复密码登录路径；不要保留新配置却假定旧镜像支持 OIDC。若版本包含不兼容数据迁移，先在隔离环境验证恢复，再决定切换。正常回滚不恢复数据库或身份提供方账号，避免覆盖期间新增的数据。
+
+停止服务并保留数据使用 `docker compose down`。不要对生产栈执行 `docker compose down -v`。
 
 ## 11. 备份
 
-数据库卷和密钥卷是不可拆分的恢复对。短暂停止服务后同时打包：
+数据库和主密钥卷是一组恢复资料，不能只备份 SQLite。以下示例会短暂停止应用，使用默认 Compose 项目名 `alertbridge`；自定义项目名时先通过 `docker volume ls` 核对实际卷名，不要照搬。
 
 ```sh
 cd /www/wwwroot/alertbridge
@@ -286,123 +283,157 @@ backup_dir="$PWD/backups/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$backup_dir"
 
 docker compose stop alertbridge
-docker run --rm \
-  -e HOST_UID="$(id -u)" \
-  -e HOST_GID="$(id -g)" \
-  -v alertbridge_alertbridge-data:/data:ro \
-  -v alertbridge_alertbridge-secrets:/secrets:ro \
-  -v "$backup_dir:/backup" \
-  alpine:3.23 \
-  sh -c 'tar -czf /backup/alertbridge-data.tar.gz -C /data . &&
-         tar -czf /backup/alertbridge-secrets.tar.gz -C /secrets . &&
-         chown "$HOST_UID:$HOST_GID" /backup/*.tar.gz'
+# 即使后续备份失败，也重新启动原服务。
+trap 'docker compose start alertbridge' EXIT HUP INT TERM
 
-mkdir -p "$backup_dir/secrets"
-cp compose.yaml .env "$backup_dir/"
-cp secrets/admin_password "$backup_dir/secrets/"
+docker run --rm \
+  -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+  -v alertbridge_alertbridge-data:/data:ro \
+  -v alertbridge_alertbridge-secrets:/keys:ro \
+  -v "$backup_dir:/backup" alpine:3.23 \
+  sh -ec 'tar -czf /backup/alertbridge-data.tar.gz -C /data .
+          tar -czf /backup/alertbridge-secrets.tar.gz -C /keys .
+          chown "$HOST_UID:$HOST_GID" /backup/*.tar.gz'
+
+cp -p compose.yaml .env "$backup_dir/"
+cp -Rp secrets "$backup_dir/"
+if [ -f compose.oidc.yaml ]; then cp -p compose.oidc.yaml "$backup_dir/"; fi
 chmod -R go-rwx "$backup_dir"
 docker compose start alertbridge
-printf 'Backup created: %s\n' "$backup_dir"
+trap - EXIT HUP INT TERM
+printf 'Backup directory: %s\n' "$backup_dir"
 ```
 
-备份同时包含密码哈希和可解密动态凭据的主密钥，只能进入加密存储，不要上传 Git、公开对象存储或普通共享网盘。
+将脚本保存为文件并以 `sh -e` 执行，任一步失败就停止，不把部分文件当作完整备份。验证两个归档可读后，再写入自己的备份完成标记。备份不包含 Nginx 配置，需要另外保存。
 
-## 12. 恢复
+OIDC 示例将配置保存在 `secrets/oidc.json`，会随目录备份。如果 `.env` 指向其他位置，还要单独复制该文件并记录原路径、属主和权限。身份提供方的 Client、账号、签名密钥和数据库按其自身方法备份；不要把这些资料混入网站静态产物。
 
-以下操作会替换目标数据卷：
+备份含有密码哈希、可解密凭据的主密钥及可能存在的 OIDC client secret，必须进入加密存储。保留最近一次完整且验证通过的恢复集；不得提交 Git 或放入公开网站目录。
+
+## 12. 恢复演练与切换
+
+优先恢复到独立 Compose 项目和数据卷，不删除原卷。新建私有工作目录，复制备份的 Compose、`.env` 和 `secrets/`，并完成以下调整：
+
+1. 将 `.env` 的 `ALERTBRIDGE_PORT` 改为未占用的 loopback 端口，例如 `18084`。
+2. OIDC 配置文件路径若已改变，修正 `.env`；恢复文件推荐 UID 10001、0400，父目录 0700。OIDC callback 仍须与身份提供方登记地址一致。
+3. 确认 `ALERTBRIDGE_IMAGE_TAG` 与备份版本一致，并保留 `.env` 的 overlay 选择。
+4. 创建隔离项目的容器与卷但不启动：
 
 ```sh
-backup_dir="$PWD/backups/YYYYMMDD-HHMMSS"
-test -s "$backup_dir/alertbridge-data.tar.gz"
-test -s "$backup_dir/alertbridge-secrets.tar.gz"
-
-docker compose down
-docker volume rm alertbridge_alertbridge-data alertbridge_alertbridge-secrets 2>/dev/null || true
-docker volume create alertbridge_alertbridge-data >/dev/null
-docker volume create alertbridge_alertbridge-secrets >/dev/null
-
-docker run --rm \
-  -v alertbridge_alertbridge-data:/data \
-  -v alertbridge_alertbridge-secrets:/secrets \
-  -v "$backup_dir:/backup:ro" \
-  alpine:3.23 \
-  sh -c 'tar -xzf /backup/alertbridge-data.tar.gz -C /data &&
-         tar -xzf /backup/alertbridge-secrets.tar.gz -C /secrets &&
-         chown -R 10001:0 /data /secrets && chmod 700 /data /secrets && chmod 600 /secrets/master.key'
-
-docker compose up -d
-docker compose ps
-curl -fsS http://127.0.0.1:18080/readyz
+docker compose -p alertbridge-restore create alertbridge
 ```
 
-恢复后重新验证管理员登录、渠道测试和签名事件。只看到容器 `running` 不等于恢复完整。
+确认 `alertbridge-restore_alertbridge-data` 与 `alertbridge-restore_alertbridge-secrets` 是本次新建空卷后，将归档解压到它们：
+
+```sh
+backup_dir=/绝对路径/完整备份目录
+docker run --rm \
+  -v alertbridge-restore_alertbridge-data:/data \
+  -v alertbridge-restore_alertbridge-secrets:/keys \
+  -v "$backup_dir:/backup:ro" alpine:3.23 \
+  sh -ec 'tar -xzf /backup/alertbridge-data.tar.gz -C /data
+          tar -xzf /backup/alertbridge-secrets.tar.gz -C /keys
+          chown -R 10001:0 /data /keys
+          chmod 700 /data /keys
+          chmod 600 /keys/master.key'
+```
+
+不要直接启动恢复副本：备份中的待投递任务可能向真实渠道重新发送消息。先将副本置于禁止出站的隔离网络，再启动 `docker compose -p alertbridge-restore up -d alertbridge`；或者只检查归档与数据库完整性，待正式切换前再启动。OIDC 在线发现和渠道测试需要受控出站，应在演练计划中单独放行，不能把恢复副本当成无副作用的只读服务。
+
+完成数据、登录和配置核对后，停止原实例，按确认过的发布步骤切换 Nginx 上游或正式端口；保留原卷与配置用于回退。不要同时让原实例与恢复副本向真实渠道投递。仅容器显示 `running` 不能证明恢复完整。
 
 ## 13. 常见故障
 
-| 现象 | 主要检查项 |
+| 现象 | 检查项 |
 | --- | --- |
-| 首次启动提示找不到管理员密码 | `secrets/admin_password` 是否存在且至少 16 字节；父目录是否为 `0700`、文件是否为 `0644`；`docker compose config` 是否通过 |
-| `container rootfs is marked read-only` | 使用了 v0.2.0 的环境来源 Secret；下载 v0.2.1 或更高版本的 `compose.yaml`，按第 4 节创建文件型 Secret |
-| 修改引导密码文件后登录密码没变化 | 这是安全设计：引导密码只在数据库为空时使用，不会覆盖现有管理员 |
-| 主密钥无法创建或读取 | `alertbridge-secrets` 卷是否可写；密钥是否被损坏；不要手工替换正在使用的主密钥 |
-| 后台登录后又回到登录页 | 必须通过 HTTPS；检查 Nginx 的 `Host`、`X-Forwarded-Proto` 和浏览器 Secure Cookie |
-| `/readyz` 返回 503 | 检查两个卷、磁盘空间、SQLite 日志和容器启动日志 |
-| 轻量 API 返回 401 | 检查 `Authorization: Bearer ...` 是否完整、令牌是否启用或已经轮换；不要把令牌放在 URL |
-| HMAC API 返回 401 | 检查 Client ID、服务器时间、Nonce 和原始正文签名 |
-| API 返回 429 | 对应客户端或轻量令牌已达到当前分钟限额，等待 `Retry-After` 后再试或核对异常调用来源 |
-| API 返回 `403 route_forbidden` | 客户端没有允许该 `routing_key` |
-| API 返回 `422 route_unavailable` | 对应路由和严重程度没有绑定已启用渠道 |
-| “活跃故障”测试后一直为 1 | 测试事件误用了 `status=firing`；发送相同客户端、路由和 `dedupe_key` 的 `resolved` 关闭故障，后续测试使用 `status=test` |
-| 飞书返回 `19024` | 后台“安全关键词”必须命中机器人配置的任一关键词 |
-| GHCR 拉取失败 | 使用已发布完整版本；确认 VPS 可访问 `ghcr.io`；中国内地阿里云 ECS 可按第 5 节配置维护者提供的 ACR VPC 镜像 |
-| ACR 返回未授权 | 重新对 `.env` 中镜像地址的 VPC Registry 执行 `docker login`；确认登录名、固定密码和仓库权限 |
-| 18080 被占用 | 修改 `.env` 的 `ALERTBRIDGE_PORT` 后重新创建容器 |
-| 通知时间比北京时间少 8 小时 | 使用 v0.2.2 或更高版本；确认 `ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai`，不要修改服务器系统时钟 |
-
-不要通过关闭既有认证、把令牌放进 URL、使用固定弱密码、把密码放入容器环境变量、放宽出站地址校验或开放应用端口来绕过故障。
-
-## 开源展示站与生产服务隔离
-
-个人开源集合和 AlertBridge 模拟 Demo 是独立静态产物，见 [官网部署](showcase-deployment.md)。它不需要升级运行镜像、复制数据库或暴露后台；域名、根目录和发布流程均与现有服务分离。
+| 找不到引导密码 | 文件存在且为 16–1024 字节；父目录 0700、文件 0644；Compose 配置通过 |
+| 修改引导密码后旧密码仍有效 | 引导值仅用于空数据库，不会覆盖已有管理员密码 |
+| 主密钥读取失败 | 核对主密钥卷与数据库恢复集，不能重新生成密钥绕过 |
+| 登录后返回登录页 | 使用 HTTPS；检查 Secure Cookie、代理 Host 和 X-Forwarded-Proto |
+| OIDC 启用后重启变回密码登录 | 检查是否遗漏 overlay，或 `.env` 中 COMPOSE_FILE 未被加载 |
+| OIDC 启动失败 | 文件路径、UID/权限、issuer 发现、HTTPS 同主机端点和 RS256 支持 |
+| OIDC 回调拒绝 | 精确 callback、Client ID、独立 subject、state/nonce、服务器对时；不要记录完整回调 URL |
+| `/readyz` 返回 503 | 卷、磁盘空间、SQLite 和启动日志 |
+| 轻量 API 401 | 令牌请求头、启用状态、轮换；不要使用 HMAC 密钥或 OIDC Token |
+| HMAC API 401 | Client ID、时间窗、Nonce 重放和原始字节签名 |
+| API 429 | 等待 Retry-After，核对来源调用频率和限额 |
+| 403 route_forbidden | 客户端的路由授权 |
+| 422 route_unavailable | 该路由与级别是否绑定已启用渠道 |
+| 测试后活跃故障未关闭 | 用相同客户端、路由和去重键发送 resolved；普通测试使用 test |
+| 飞书 19024 | 后台关键词需匹配机器人要求 |
+| 镜像拉取失败 | 已发布完整版本、GHCR 连通性；ACR 另查登录与仓库权限 |
+| 时间显示错误 | IANA 时区配置；不修改服务器时钟补偿展示时差 |
 
 ## 可选 Tinyauth OIDC 统一登录
 
-在宿主机私有目录（0700）创建 JSON 文件，属主设为容器 UID 10001、权限 0400。实际 Secret 只在服务器生成保存，不粘贴到终端输出、Git 或浏览器。字段如下（仅占位示例）：
+### 配置文件
+
+需要 v0.5.0 或更新镜像，以及一个符合以下约束的身份提供方。当前实现以 Tinyauth 验证，不代表任意 OIDC 服务即插即用：
+
+- 固定 HTTPS issuer，发现、授权、Token、JWKS 端点都在该 issuer 的主机。
+- 支持 Authorization Code、PKCE S256、RS256 ID Token 和 Client Secret Basic。
+- 每个应用单独注册 Client，精确登记 `https://notify.example.com/auth/oidc/callback`。
+- 管理员由 issuer + subject 固定绑定；不要以用户名、邮箱或首次登录授予管理员。
+
+在宿主机 `secrets/` 私有目录内创建 `oidc.json`（以下只是字段示例，不可原样使用）：
 
 ```json
 {
   "issuer": "https://auth.example.com",
-  "client_id": "independent-alertbridge-client",
-  "client_secret": "<server-generated-high-entropy-secret>",
+  "client_id": "alertbridge-admin",
+  "client_secret": "<至少32字节的独立高熵秘密>",
   "redirect_url": "https://notify.example.com/auth/oidc/callback",
-  "admin_subject": "<explicitly-registered-client-specific-subject>",
+  "admin_subject": "<此Client下明确登记的管理员subject>",
   "password_fallback": true
 }
 ```
 
-OIDC 需要 v0.5.0 或更高版本的应用镜像。使用发布版本配套的可选 overlay：
-
 ```sh
+chmod 700 secrets
+chown 10001:0 secrets/oidc.json
+chmod 400 secrets/oidc.json
 curl -fsSLo compose.oidc.yaml \
   https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.0/compose.oidc.yaml
 ```
 
-在 `.env` 中将 `ALERTBRIDGE_IMAGE_TAG` 设为 `v0.5.0`（或更新正式版本），并设置 `ALERTBRIDGE_OIDC_CONFIG_FILE` 为该文件绝对路径，以 `docker compose -f compose.yaml -f compose.oidc.yaml` 管理服务。基础 Compose 不启用 OIDC，不影响原密码部署。发现、授权、Token、JWKS 必须使用配置 issuer 的 HTTPS 主机；仅接受 RS256。不要让健康检查、通知接口或整个域名经过统一 auth_request。
+将第 9 节的 `COMPOSE_FILE` 和绝对文件路径加入 `.env`，确认镜像标签为 `v0.5.0` 或更高的兼容正式版本，然后：
 
-先核对线上 Tinyauth 镜像 revision、subject 算法和账号的精确大小写。每个应用新增独立 Client，精确允许 callback，采用 file-backed client secret。保留其他 Client、账号/TOTP、数据与签名密钥；不能照搬另一个 Client 的 sub，也不能以首次登录自动授予管理员。PKCE S256 即使发现文档漏报能力也发送，部署前需核对当前版本实现并通过真实登录验证。
+```sh
+docker compose config
+docker compose pull
+docker compose up -d alertbridge
+```
 
-Nginx 在本应用站点中新增精确 callback 代理，保留实际 upstream/header 设置，并在这个 location 内设置 `access_log off; error_log /dev/null crit;`。不得在应用、反代或错误报告中记录完整 callback URL。用宝塔 ProxyWriteConfig 保持面板与 Nginx 配置一致；检查 nginx -t 后平滑重载。不要把包含 code/state 的页面截图、URL 或网络日志保存到交付材料。
+`password_fallback=true` 保留折叠的本地密码入口；false 时 OIDC 启用后的登录页不提供密码入口。引导密码文件仍是基础 Compose 的必需 Secret。变更身份或停用备用入口前保留可执行的恢复方案。
 
-生产变更前在服务器 0700 备份目录保存应用 Compose/.env、当前镜像 ID、代理配置及应用数据/主密钥恢复对。Tinyauth 保存 Compose/.env、当前镜像、持久目录与 SQLite backup API 生成的完整性检查通过的备份。只重建必要服务，Tinyauth 必须使用现有镜像；短暂不可用需提前告知。
+Tinyauth 的 subject 与 Client 相关，必须核对部署版本和该账号在这个 Client 下的精确值，不得照搬其他应用的 sub。现有登录按钮文字固定为“使用 Ted 个人认证服务登录”，当前不能通过配置改名；这是 UI 限制，不表示部署必须使用维护者的认证服务。
 
-回滚应用时恢复原 Compose/.env 或撤销 OIDC overlay，启动之前记录的镜像；恢复本次代理配置，执行 nginx -t 再平滑重载。Tinyauth 正常回滚只移除本次新增 Client/挂载并使用原镜像重建，不恢复旧账号、TOTP 或数据库，不覆盖回滚期间更新的数据。数据备份只用于明确的数据故障恢复。
+### 回调代理与日志
 
-隔离测试覆盖正确/其他身份、错误签名/issuer/audience/state/nonce、过期/重放、PKCE、会话轮换、退出和 CSRF；全量 Go、vet、release 与 Docker E2E 检查也需通过。生产验收还须用户实际完成密码、TOTP及首次授权：过渡页 → 点击 → 认证中心 → 后台，再验证应用退出和中心会话复用；HTTP 200、模拟 Token 或测试通过不能替代这一验收。
+在通知服务的 Nginx 站点增加以下精确 location；不是在官网静态站中添加。保留原 OAuth 发现代理和 ACME 规则：
 
-### v0.5.0 发布与候选验收记录
+```nginx
+location = /auth/oidc/callback {
+    proxy_pass http://127.0.0.1:18080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    access_log off;
+    error_log /dev/null crit;
+}
+```
 
-发布前的候选部署使用本地构建的 `alertbridge:oidc-20261017`（`v0.4.2-oidc.candidate`）。v0.5.0 正式镜像由 GHCR 发布，生产可使用经过平台摘要核验的 ACR 镜像切换。保留现有生产 Compose 中的 OIDC 文件 Secret 设置，日常仍使用 `docker compose`；只替换镜像地址与标签，不覆盖认证配置、数据库或密钥。迁移期备用密码登录由原服务器配置继续控制。
+用宝塔的反代配置入口保存并同步面板配置，先备份，再执行 `nginx -t` 和平滑重载。不要在应用、反代或身份提供方日志中保存包含 code/state 的完整 callback URL。不要对整个域名添加 `auth_request`，以免阻断健康检查、通知调用和 MCP。
 
-实际浏览器已验证首次授权后返回后台、应用退出回到过渡页、再次点击后复用中心会话。密码/TOTP本次因中心会话有效未重新输入。完整安全负例与原通知/投递功能在隔离环境验证；生产仅执行只读健康/鉴权检查，没有发送测试通知或重建 Dots 授权。
+### 登录验证和回退
 
-有效备份为 `/www/backups/alertbridge-oidc-20261017T142946Z`，必须包含 `BACKUP_COMPLETE`；两个独立 SQLite 备份已通过完整性检查。服务端执行 `python3 /www/backups/alertbridge-oidc-20261017T142946Z/rollback.py` 回退应用配置、代理和原镜像；附加 `--tinyauth` 仅增量移除本次 Client 并重建原认证中心镜像。脚本已语法验证，未实际回滚生产；不会恢复或覆盖业务数据库、账号、TOTP和签名密钥。回滚后需重新检查健康、登录及公开接口。
+验证登录页等待点击、身份提供方认证与授权、callback 返回后台、应用退出，以及再次登录时身份提供方会话复用。TOTP 是否出现取决于提供方配置和现有会话，不是 AlertBridge 提供的能力。应用退出只清除本地会话，不宣称身份提供方全局退出。
+
+错误签名、issuer、audience、state、nonce、过期、重复回调和未登记 subject 由隔离测试覆盖；真实部署仍需目标账号完成浏览器登录。后台 OIDC 登录不替代 Dots 的 OAuth 授权；管理员可用 OIDC 登录后再确认 MCP 只读授权。
+
+回退时恢复旧 Compose/.env 和代理配置、原镜像标签，保留现有业务卷。正常回退不恢复身份提供方数据库、账号、TOTP 或签名密钥。完整数据备份只用于明确的数据故障恢复。
+
+## 官网静态站
+
+[项目网站](https://opensource.tedxiong.com/alertbridge/) 与通知运行服务分别部署。网站构建、发布及回滚见 [静态站部署](showcase-deployment.md)。网站不需要通知镜像、数据库或认证配置。

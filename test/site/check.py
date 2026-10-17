@@ -45,11 +45,45 @@ script = (ROOT / 'site/demo.js').read_text()
 for forbidden in ('fetch(', 'XMLHttpRequest', 'WebSocket(', 'localStorage', 'sessionStorage', 'innerHTML', 'sendBeacon'):
     assert forbidden not in script, f'demo must remain local-only: {forbidden}'
 
-# Validate local Markdown references in all changed/new public documentation.
-for file in [ROOT / n for n in ('README.md', 'README.en.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md', 'docs/dots-example.md', 'docs/showcase-deployment.md', 'docs/opensource-review.md', 'examples/python/README.md')]:
+# Validate all tracked public Markdown references and local heading anchors.
+import subprocess
+
+def heading_ids(path):
+    result, duplicates = set(), {}
+    fence = False
+    for line in path.read_text().splitlines():
+        if line.startswith(('```', '~~~')):
+            fence = not fence
+            continue
+        if fence or not re.match(r'^#{1,6} ', line):
+            continue
+        title = re.sub(r'^#{1,6} ', '', line).strip().lower()
+        slug = re.sub(r'[^\w\- ]', '', title).replace(' ', '-')
+        count = duplicates.get(slug, 0)
+        duplicates[slug] = count + 1
+        result.add(slug + (f'-{count}' if count else ''))
+    return result
+
+tracked = subprocess.check_output(['git', 'ls-files', '*.md'], cwd=ROOT, text=True).splitlines()
+for relative in tracked:
+    file = ROOT / relative
     for link in re.findall(r'\]\(([^)]+)\)', file.read_text()):
         url = urlsplit(link)
-        if url.scheme or url.netloc or not url.path:
+        if url.scheme or url.netloc:
             continue
-        assert (file.parent / unquote(url.path)).exists(), f'{file}: broken link {link}'
-print('Static assets, anchors, documentation links and demo isolation checks passed.')
+        target = file.parent / unquote(url.path) if url.path else file
+        assert target.exists(), f'{relative}: broken link {link}'
+        if url.fragment and target.suffix == '.md':
+            assert unquote(url.fragment) in heading_ids(target), f'{relative}: broken heading {link}'
+
+version = (ROOT / 'VERSION').read_text().strip()
+for relative in ('README.md', 'README.en.md', 'docs/deployment.md', 'site/index.html', 'site/collection.html'):
+    source = (ROOT / relative).read_text()
+    assert version in source, f'{relative}: missing current release {version}'
+    assert 'github.io/alertbridge' not in source, f'{relative}: retired Pages URL'
+for relative in ('README.md', 'docs/deployment.md'):
+    source = (ROOT / relative).read_text()
+    for referenced in re.findall(r'alertbridge/(v[0-9.]+)/compose(?:\.oidc)?\.yaml', source):
+        assert referenced == version, f'{relative}: stale installation version {referenced}'
+assert not (ROOT / '.github/workflows/pages.yml').exists(), 'Pages workflow is retired'
+print('Static assets, anchors, all public Markdown links, release references and demo isolation checks passed.')

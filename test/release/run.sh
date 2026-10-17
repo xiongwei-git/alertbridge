@@ -82,6 +82,17 @@ if grep -Fq 'release-check-password' "$env_compose"; then
   exit 1
 fi
 
+# An OIDC deployment must keep its optional overlay across ordinary Compose commands.
+cp "$project_dir/compose.oidc.yaml" "$env_project/compose.oidc.yaml"
+printf '%s\n' '{}' > "$env_project/secrets/oidc.json"
+printf '%s\n' \
+  'COMPOSE_FILE=compose.yaml:compose.oidc.yaml' \
+  "ALERTBRIDGE_OIDC_CONFIG_FILE=$env_project/secrets/oidc.json" >> "$env_project/.env"
+(cd "$env_project" && docker compose config) > "$env_compose"
+require_match 'ALERTBRIDGE_OIDC_CONFIG_FILE: /run/secrets/oidc_config' "$env_compose"
+require_match 'source: oidc_config' "$env_compose"
+require_match 'read_only: true' "$env_compose"
+
 ALERTBRIDGE_ADMIN_PASSWORD_FILE="$secret_file" ALERTBRIDGE_IMAGE_TAG=v9.8.7 ALERTBRIDGE_VERSION=test-build \
   docker compose -f "$project_dir/compose.yaml" -f "$project_dir/compose.build.yaml" config > "$build_compose"
 require_match 'image: alertbridge:local' "$build_compose"
