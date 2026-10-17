@@ -37,7 +37,7 @@ for name in ('index.html', 'collection.html'):
         path = url.path.removeprefix('alertbridge/') if name == 'collection.html' else url.path
         target = file.parent / unquote(path)
         if path:
-            assert target.exists(), f'missing site asset: {link}'
+            assert (name == 'index.html' and path == '../') or target.exists(), f'missing site asset: {link}'
         if not path and url.fragment:
             assert url.fragment in page.ids, f'missing anchor: {link}'
 

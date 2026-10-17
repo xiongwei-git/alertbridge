@@ -1,6 +1,6 @@
 # 个人开源集合与 AlertBridge 官网部署
 
-目标域名：`opensource.tedxiong.com`。集合首页 `/`，AlertBridge 项目页及模拟 Demo `/alertbridge/`。源码 `site/`，生成目录 `dist-site/`，无 Node、构建依赖、CDN、外部字体或数据服务。
+目标域名：`opensource.tedxiong.com`。集合首页 `/`，AlertBridge 项目页及模拟 Demo `/alertbridge/`。源码 `site/`，生成目录 `dist-site/`（含 `SHA256SUMS` 逐文件校验清单），无 Node、构建依赖、CDN、外部字体或数据服务。
 
 ## 本地预览与打包
 
