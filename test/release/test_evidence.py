@@ -62,6 +62,38 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(reference["digest"], key)
         self.assertEqual(reference["annotations"]["org.opencontainers.image.ref.name"], "release")
 
+    def test_multiple_tag_references_to_same_build_index(self):
+        descriptor = self.blob(self.index)
+        descriptor["mediaType"] = "application/vnd.oci.image.index.v1+json"
+        aliases = []
+        for name in ("v0.6.1", "v0.6", "latest", "latest"):
+            alias = copy.deepcopy(descriptor)
+            alias["annotations"] = {"org.opencontainers.image.ref.name": name}
+            aliases.append(alias)
+        (self.layout / "index.json").write_bytes(release.encoded({"manifests": aliases}))
+        key = release.prepare(self.layout, self.evidence)
+        self.assertEqual(release.verify(self.evidence, self.evidence / "runtime-index.json"), key)
+        self.assertEqual(len(list(self.evidence.glob("*-sbom.json"))), 2)
+        self.assertEqual(len(list(self.evidence.glob("*-provenance.json"))), 2)
+
+    def test_every_tag_reference_size_is_validated(self):
+        descriptor = self.blob(self.index)
+        descriptor["mediaType"] = "application/vnd.oci.image.index.v1+json"
+        corrupt = copy.deepcopy(descriptor)
+        corrupt["size"] += 1
+        (self.layout / "index.json").write_bytes(release.encoded({"manifests": [descriptor, corrupt]}))
+        with self.assertRaisesRegex(ValueError, "integrity mismatch"):
+            release.prepare(self.layout, self.evidence)
+
+    def test_different_build_indexes_are_rejected(self):
+        first = self.blob(self.index)
+        second = self.blob({"manifests": []})
+        for descriptor in (first, second):
+            descriptor["mediaType"] = "application/vnd.oci.image.index.v1+json"
+        (self.layout / "index.json").write_bytes(release.encoded({"manifests": [first, second]}))
+        with self.assertRaisesRegex(ValueError, "different build indexes"):
+            release.prepare(self.layout, self.evidence)
+
     def test_missing_platform_or_attestation_fails(self):
         self.index["manifests"] = self.index["manifests"][:-1]
         with self.assertRaisesRegex(ValueError, "SBOM and provenance required"):

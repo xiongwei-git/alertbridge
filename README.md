@@ -6,7 +6,7 @@ AlertBridge 是用 Go 和 SQLite 实现的单实例通知网关。它接收 HTTP
 
 [项目网站与模拟 Demo](https://opensource.tedxiong.com/alertbridge/) · [English](README.en.md) · [部署](docs/deployment.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md) · [发布记录](CHANGELOG.md)
 
-当前发布版本：**v0.6.0**。支持已有渠道编辑，并正式收录现有生产 MCP 2.0、可选 Events 与 EgressHub SDK 基线；通知 API 与管理员登录保持兼容。MCP 协议固定为 `2026-07-28`，不再支持旧版 initialize 握手。
+当前发布版本：**v0.6.1**。支持已有渠道编辑，并正式收录现有生产 MCP 2.0、可选 Events 与 EgressHub SDK 基线；通知 API 与管理员登录保持兼容。MCP 协议固定为 `2026-07-28`，不再支持旧版 initialize 握手。
 
 运行服务的域名根路径 `/` 自动提供无需登录的项目介绍页，不展示业务数据，无需额外配置 Nginx 静态页面。API、MCP 和后台认证不变。见[介绍页说明及旧配置迁移](docs/showcase-deployment.md#运行服务的公开根路径介绍页)。
 
@@ -54,10 +54,10 @@ cd alertbridge
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.0/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.1/compose.yaml
 ```
 
-按 [部署指南](docs/deployment.md) 创建 `.env` 和文件型管理员 Secret，将 `ALERTBRIDGE_IMAGE_TAG` 固定为 `v0.6.0`，再启动服务。基础部署使用密码登录；OIDC 另需同版本 `compose.oidc.yaml`、身份提供方和受限配置文件。
+按 [部署指南](docs/deployment.md) 创建 `.env` 和文件型管理员 Secret，将 `ALERTBRIDGE_IMAGE_TAG` 固定为 `v0.6.1`，再启动服务。基础部署使用密码登录；OIDC 另需同版本 `compose.oidc.yaml`、身份提供方和受限配置文件。
 
 应用只绑定 `127.0.0.1:18080`，由 Nginx 提供 HTTPS。唯一镜像发布源改为阿里云 ACR，支持 `linux/amd64` 与 `linux/arm64`：
 

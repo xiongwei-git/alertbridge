@@ -37,7 +37,7 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.0/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.1/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
@@ -53,7 +53,7 @@ mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
   'ALERTBRIDGE_IMAGE=crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com/ted_docker_mirror/ted' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.6.0' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.6.1' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -86,7 +86,7 @@ chmod 600 .env
 docker login crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com -u '<获授权的 Registry 登录名>'
 ```
 
-当前主分支 Compose 默认使用公网 ACR；已发布的 `v0.5.1` 等历史 Compose 文件不会重写，所以上文 `.env` 显式设置 `ALERTBRIDGE_IMAGE`，使旧文件也从 ACR 拉取。当前发布为 `v0.6.0`，历史镜像仍保留。镜像仓库需授权账号访问；公开 GitHub 仓库不等于公开 ACR 拉取权限。
+当前主分支 Compose 默认使用公网 ACR；已发布的 `v0.5.1` 等历史 Compose 文件不会重写，所以上文 `.env` 显式设置 `ALERTBRIDGE_IMAGE`，使旧文件也从 ACR 拉取。当前发布为 `v0.6.1`，历史镜像仍保留。镜像仓库需授权账号访问；公开 GitHub 仓库不等于公开 ACR 拉取权限。
 
 ```sh
 docker compose config
@@ -404,7 +404,7 @@ chmod 700 secrets
 chown 10001:0 secrets/oidc.json
 chmod 400 secrets/oidc.json
 curl -fsSLo compose.oidc.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.0/compose.oidc.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.1/compose.oidc.yaml
 ```
 
 将第 9 节的 `COMPOSE_FILE` 和绝对文件路径加入 `.env`，确认镜像标签为 `v0.5.0` 或更高的兼容正式版本，然后：
@@ -522,8 +522,8 @@ Dockerfile 先复制该模块再下载依赖，构建不要求本机相邻 Egres
 有新生产Events订阅时先停用它们，避免旧版无法处理内部回调。脚本已语法验证，未再次切换生产做演练；回滚也有短暂重建窗口。
 测试回滚位于 `/www/wwwroot/test.tedxiong.com/app/.private/sdk-migration-20261019/rollback.py`。
 
-## v0.6.0 渠道编辑与现有生产基线正式发布
+## v0.6.1 渠道编辑与现有生产基线正式发布
 
-v0.6.0 增加后台渠道编辑，固定 ID 与类型，非敏感配置回填，URL 和密钥留空保留。保存立即更新运行快照，不需要额外数据库迁移。此版本同时正式收录已经部署的 MCP 2.0 / Events / EgressHub 源码；旧正式版升级须注意 MCP 仅支持 `2026-07-28`，可选 Events 默认关闭。
+v0.6.1 增加后台渠道编辑，固定 ID 与类型，非敏感配置回填，URL 和密钥留空保留。保存立即更新运行快照，不需要额外数据库迁移。此版本同时正式收录已经部署的 MCP 2.0 / Events / EgressHub 源码；旧正式版升级须注意 MCP 仅支持 `2026-07-28`，可选 Events 默认关闭。
 
 现有候选版部署升级时，保留 OIDC 和 EgressHub overlay、Secret 与挂载，只将最终生效的 image 改为 ACR 正式镜像，去掉候选版的 `pull_policy: never`。不能只改 `.env` 标签而忽略 overlay 中的硬编码镜像。上线前校验完整 Compose、备份 SQLite 与主密钥，记录旧镜像 ID；回退只恢复原配置并重建 AlertBridge，保留在线业务卷。

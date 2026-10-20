@@ -28,9 +28,17 @@ def prepare(layout, evidence):
         return data
 
     index = json.loads((layout / "index.json").read_bytes())
-    # OCI exporters may wrap the build index in an OCI-layout reference index.
-    while len(index["manifests"]) == 1 and "index" in index["manifests"][0]["mediaType"]:
-        index = json.loads(blob(index["manifests"][0]))
+    # A tagged OCI export can contain several aliases of the same build index.
+    # Validate every alias before unwrapping; never choose between different builds.
+    while any("index" in item["mediaType"] for item in index["manifests"]):
+        references = index["manifests"]
+        if not all("index" in item["mediaType"] for item in references):
+            raise ValueError("mixed build index and manifest references")
+        if len({item["digest"] for item in references}) != 1:
+            raise ValueError("different build indexes in OCI export")
+        for item in references:
+            data = blob(item)
+        index = json.loads(data)
     (evidence / "build-index.json").write_bytes(encoded(index))
     runtime = {}
     attestations = []
