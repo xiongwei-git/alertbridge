@@ -471,6 +471,22 @@ func (m *Manager) DeleteIngressToken(ctx context.Context, id string) error {
 	return m.Reload(ctx)
 }
 
+// ChannelForEdit returns editable settings without credentials or private endpoint URLs.
+func (m *Manager) ChannelForEdit(ctx context.Context, id string) (ChannelInput, error) {
+	record, err := m.database.GetChannel(ctx, id)
+	if err != nil {
+		return ChannelInput{}, err
+	}
+	cfg, err := m.decryptConfig(record.ConfigCipher)
+	if err != nil {
+		return ChannelInput{}, err
+	}
+	return ChannelInput{ID: record.ID, Type: record.Type, Enabled: record.Enabled,
+		ChatID: cfg.ChatID, SMTPHost: cfg.SMTPHost, SMTPPort: cfg.SMTPPort,
+		SMTPUsername: cfg.SMTPUsername, SMTPFrom: cfg.SMTPFrom, SMTPRecipients: cfg.SMTPRecipients,
+		SMTPMode: cfg.SMTPMode, MessageType: cfg.MessageType, Keyword: &cfg.Keyword}, nil
+}
+
 func (m *Manager) UpsertChannel(ctx context.Context, input ChannelInput) error {
 	if !identifierPattern.MatchString(input.ID) {
 		return errors.New("invalid channel id")

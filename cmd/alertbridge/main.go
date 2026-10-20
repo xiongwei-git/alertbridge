@@ -14,6 +14,7 @@ import (
 	"github.com/xiongwei-git/alertbridge/internal/admin"
 	"github.com/xiongwei-git/alertbridge/internal/auth"
 	"github.com/xiongwei-git/alertbridge/internal/bootstrap"
+	"github.com/xiongwei-git/alertbridge/internal/channel"
 	"github.com/xiongwei-git/alertbridge/internal/config"
 	"github.com/xiongwei-git/alertbridge/internal/httpapi"
 	"github.com/xiongwei-git/alertbridge/internal/mcpapi"
@@ -82,6 +83,7 @@ func main() {
 	var mcpHandler http.Handler
 	var oauthHandler http.Handler
 	var oauth *mcpapi.OAuth
+	var events *mcpapi.Events
 	digest, routes, publicURL := os.Getenv("ALERTBRIDGE_MCP_TOKEN_SHA256"), os.Getenv("ALERTBRIDGE_MCP_ROUTES"), os.Getenv("ALERTBRIDGE_PUBLIC_URL")
 	if publicURL != "" && routes != "" {
 		oauth, err = mcpapi.NewOAuth(database, publicURL, routes, os.Getenv("ALERTBRIDGE_MCP_OAUTH_REDIRECT"), adminUI.OAuthSession)
@@ -91,8 +93,26 @@ func main() {
 		}
 		oauthHandler = oauth
 	}
+	if enabled := os.Getenv("ALERTBRIDGE_MCP_EVENTS"); enabled != "" && enabled != "0" {
+		if enabled != "1" || (digest == "" && oauth == nil) {
+			logger.Error("MCP Events requires MCP authentication and ALERTBRIDGE_MCP_EVENTS=1")
+			os.Exit(1)
+		}
+		events, err = mcpapi.NewEvents(database, cipher, routes, digest, publicURL, os.Getenv("ALERTBRIDGE_MCP_EVENT_CALLBACK_HOSTS"))
+		if err != nil {
+			logger.Error("configure MCP Events", "error", err)
+			os.Exit(1)
+		}
+	}
+	if events != nil {
+		if err := events.ConfigureEgress(os.Getenv("ALERTBRIDGE_MCP_EVENT_EGRESS_FILE")); err != nil {
+			logger.Error("configure MCP Events egress", "error", err)
+			os.Exit(1)
+		}
+	}
+
 	if digest != "" || oauth != nil {
-		mcpHandler, err = mcpapi.NewWithOAuth(database, digest, routes, oauth)
+		mcpHandler, err = mcpapi.NewWithOAuth(database, digest, routes, oauth, events)
 		if err != nil {
 			logger.Error("configure MCP", "error", err)
 			os.Exit(1)
@@ -100,7 +120,11 @@ func main() {
 	}
 	handler := httpapi.New(httpapi.Config{Database: database, Verifier: verifier, BearerVerifier: bearerVerifier, Admin: adminUI, MCP: mcpHandler, OAuth: oauthHandler, ResolveTargets: gateway.ResolveTargets, IsSilenced: gateway.IsSilenced, NonceRetention: cfg.Auth.NonceRetention, DedupeWindow: cfg.Dedupe.Window, BodyLimitBytes: cfg.Server.BodyLimitBytes, Logger: logger})
 	server := &http.Server{Addr: cfg.Server.Listen, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}
-	deliveryWorker := worker.New(database, nil, worker.Config{PollInterval: cfg.Worker.PollInterval, LeaseDuration: cfg.Worker.LeaseDuration, RetryDelays: cfg.Worker.RetryDelays, MaxAttempts: cfg.Worker.MaxAttempts, Retention: cfg.Database.Retention, SenderFor: gateway.Sender, DisplayLocation: cfg.Display.Location}).WithLogger(logger)
+	var eventSenderFor func(context.Context, *store.Delivery) (channel.Sender, error)
+	if events != nil {
+		eventSenderFor = events.Sender
+	}
+	deliveryWorker := worker.New(database, nil, worker.Config{EventSenderFor: eventSenderFor, PollInterval: cfg.Worker.PollInterval, LeaseDuration: cfg.Worker.LeaseDuration, RetryDelays: cfg.Worker.RetryDelays, MaxAttempts: cfg.Worker.MaxAttempts, Retention: cfg.Database.Retention, SenderFor: gateway.Sender, DisplayLocation: cfg.Display.Location}).WithLogger(logger)
 	go deliveryWorker.Run(ctx)
 	go func() {
 		<-ctx.Done()

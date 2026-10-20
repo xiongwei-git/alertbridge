@@ -37,7 +37,7 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.1/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.0/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
@@ -53,7 +53,7 @@ mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
   'ALERTBRIDGE_IMAGE=crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com/ted_docker_mirror/ted' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.5.1' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.6.0' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -86,7 +86,7 @@ chmod 600 .env
 docker login crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com -u '<获授权的 Registry 登录名>'
 ```
 
-当前主分支 Compose 默认使用公网 ACR；已发布的 `v0.5.1` 等历史 Compose 文件不会重写，所以上文 `.env` 显式设置 `ALERTBRIDGE_IMAGE`，使旧文件也从 ACR 拉取。现有 ACR `v0.5.1` 可继续使用，此次流程改造不发布新镜像。镜像仓库需授权账号访问；公开 GitHub 仓库不等于公开 ACR 拉取权限。
+当前主分支 Compose 默认使用公网 ACR；已发布的 `v0.5.1` 等历史 Compose 文件不会重写，所以上文 `.env` 显式设置 `ALERTBRIDGE_IMAGE`，使旧文件也从 ACR 拉取。当前发布为 `v0.6.0`，历史镜像仍保留。镜像仓库需授权账号访问；公开 GitHub 仓库不等于公开 ACR 拉取权限。
 
 ```sh
 docker compose config
@@ -404,7 +404,7 @@ chmod 700 secrets
 chown 10001:0 secrets/oidc.json
 chmod 400 secrets/oidc.json
 curl -fsSLo compose.oidc.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.1/compose.oidc.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.0/compose.oidc.yaml
 ```
 
 将第 9 节的 `COMPOSE_FILE` 和绝对文件路径加入 `.env`，确认镜像标签为 `v0.5.0` 或更高的兼容正式版本，然后：
@@ -448,3 +448,82 @@ location = /auth/oidc/callback {
 ## 官网静态站
 
 [项目网站](https://opensource.tedxiong.com/alertbridge/) 与通知运行服务分别部署。网站构建、发布及回滚见 [静态站部署](showcase-deployment.md)。网站不需要通知镜像、数据库或认证配置。
+
+
+## 可选 MCP Events
+
+现有 MCP 认证之外，Compose 增加 `ALERTBRIDGE_MCP_EVENTS=1` 和 `ALERTBRIDGE_MCP_EVENT_CALLBACK_HOSTS`。后者只填实际 Events 平台回调的精确 DNS 主机名（逗号分隔），不填 URL、通配或 OAuth 登录回调。默认关闭；配置错误拒绝启动。出站仅允许 HTTPS/443 公网地址，不需要开放新入站端口或 SSE 配置。
+
+新订阅与回调任务保存在现有 SQLite；URL/签名密钥由现有主密钥加密，仍必须成对备份和恢复 `alertbridge-data`、`alertbridge-secrets`。升级自动创建订阅及任务代次表，不改变旧表字段或增加连接/Worker。回滚旧镜像前应先在平台取消监控；旧版不投递内部回调任务。关闭 Events 会停止发送，未处理内部任务按不可用终止，重新开启不承诺补发。每小时清理过期/撤销订阅。
+
+启用后需重新扫描插件，明确建立监控任务并进行真实 Dots 全链路验收；本地测试和 Webhook 2xx 都不代表 Agent 已完成任务。协议、安全与验收步骤见 [MCP 指南](mcp.md#主动触发)。2026-10-19 已按用户授权将生产升级到私有 SDK 候选并启用此能力；此次轻量验收不包含生产真实 Dots 自动执行，详见文末迁移记录。
+
+
+### 2026-10-18 独立 Dots 验收环境
+
+测试入口为 `https://test.tedxiong.com/mcp`；宝塔反代项目名为 `test.tedxiong.com`，不与生产 `notify.tedxiong.com` 共用应用配置。测试 Compose 项目 `alertbridge-mcp-test`，应用仅监听 `127.0.0.1:18089`；目录 `/www/wwwroot/test.tedxiong.com/app`。独立 `alertbridge-mcp-test_alertbridge-data`、`alertbridge-mcp-test_alertbridge-secrets` 卷，私有配置/基线在该目录 `.private/`。管理员口令通过独立 file-backed Secret 初始化，浏览器使用 Secure Cookie；仅模拟通知渠道允许容器内 HTTP，MCP 回调仍严格 HTTPS/公网/域名白名单。
+
+镜像是本地交叉构建并校验传输摘要的 `alertbridge:mcp-test` 与模拟接收器，未发布到镜像仓库，不是正式发布版本。生产容器 ID 与 Compose/.env/Nginx/反代 JSON 四份摘要在部署前后相同，生产 readyz=200。测试独立 HTTPS、OAuth discovery、MCP discovery/queries/events catalog 及真实 Dots 订阅、签名回调、自动唤醒和事件字段读取已通过。当前精确回调白名单为 `connectors.api.openai.com`；初始 `callback.example` 占位值已替换。订阅切换为仅 `sandbox` 路由且 `critical` 严重度后，真实 `info` 告警未生成 MCP 投递任务，`critical` 告警首次投递返回 200；用户随后确认收到匹配 `critical` 告警的自动回复。取消订阅后服务端订阅表为零，新 `critical` 模拟告警只有模拟渠道投递，没有 MCP 投递任务。个别任务回复延迟的具体平台原因未确定，不能将回调 200 等同于立即回复。
+
+停止/回滚测试仅在测试目录、带 `--project-name alertbridge-mcp-test --env-file .private/compose.env -f compose.yaml -f compose.test.yaml` 的命令中进行；`down --remove-orphans` 保留两份恢复卷，禁止误操作生产项目或使用 `down -v`。本节是2026-10-18测试环境记录；2026-10-19生产升级见文末。
+
+
+### 测试出站网络：当前限制与长期候选
+
+验收时临时通路仅改变测试容器的回调解析及其网络命名空间，原始 TLS 经 SSH 字节隧道出站，应用仍验证 OpenAI 主机证书。宿主无对应测试 DNAT 规则；应用保持 UID 10001、只读文件系统和 `cap_drop: ALL`。该通路依赖本机在线，设置约两小时自动回滚，不是长期部署。过滤与取消验收后已主动回滚并停止隧道；测试实例仍可查询，但恢复真实 Events 订阅前需先配置可用出站通路。测试私有目录 `.private/egress-test/rollback.py` 保存带配置摘要保护的回滚入口；测试数据和 Secret 恢复卷保留。
+
+长期候选为测试专用出站网络命名空间，经独立加密隧道使用现有新加坡 VPS 出站。2026-10-18 的只读探测已验证该 VPS 可与 OpenAI 回调主机完成 TLS 1.3；未安装 WireGuard 或 Docker，也未修改其配置。可考虑 WireGuard 网关，或仅允许固定 OpenAI 回调目的主机的服务器间 SSH 隧道；二者均未部署。
+
+实施前应明确新加坡端的软件、端口、独立密钥及服务管理范围。应用本身不增加网络管理能力，不读取通用代理环境变量；保留 HTTPS、精确主机白名单、DNS 公网地址校验、连接地址绑定和无重定向策略。长期配置需覆盖可信 DNS、容器重建后的网络恢复、断线重连、重启启动顺序和通路中断时禁止回落到不可用直连，并完成关闭本机后、测试容器重建后及隧道恢复后的真实 Dots 回调验收。服务器全局 DNS、默认路由和生产容器均不在变更范围内。
+
+### Isolated MCP Events egress (test opt-in)
+
+`ALERTBRIDGE_MCP_EVENT_EGRESS_FILE` selects a private JSON file with `address`
+(public literal IP and port), `server_name`, `ca_file`, `cert_file`, `key_file`, and explicit `destinations` (exact host:443 list).
+Mount certificates/config read-only; config and key must have no group/other
+permissions and be readable by UID 10001. A configured gateway failure never falls
+back to direct access. Target DNS/public-IP validation and address binding occur
+at the authenticated EgressHub gateway; original-host business TLS, callback
+allowlists, signatures, redirect rejection and delivery queue remain enforced.
+Do not enable this setting in production as part of test deployment. Keep the
+original test image, Compose files, environment and data/key volumes for rollback.
+
+MCP Events测试的自动证书轮换使用专用凭据目录只读挂载：证书/key路径指向同一个
+`current`代际目录，适配器每条新连接先解析该目录再加载配对文件。禁止用单文件bind
+mount期待原子替换后自动更新inode。当前轮换仅测试实例启用，不修改生产配置或镜像。
+
+
+### 公共 SDK 接入与生产迁移（2026-10-19）
+
+生产已获明确授权启用 MCP Events，只有 OpenAI 事件回调走 EgressHub，原通知渠道不变。
+回调适配器导入 `egresshub/client`，不再维护一份独立 CONNECT/TLS 实现。
+`third_party/egresshub` 是私有公共模块的明确源码快照，由相对 Go replace 引用；
+`scripts/sync-egresshub-sdk.py /path/to/EgressHub` 同步六个源码/测试文件和逐文件 SHA256 清单。
+Dockerfile 先复制该模块再下载依赖，构建不要求本机相邻 EgressHub 仓库。尚未正式发布远端模块或镜像。
+
+配置必须包含 `destinations: ["connectors.api.openai.com:443"]`，且是应用回调白名单的子集。
+配置、私钥600，UID10001可读；只读挂载整个凭据目录，使用同一current代际路径。
+凭据挂载根目录须允许容器UID遍历（755），代际目录700且归属UID10001；不要因宿主umask留下root700挂载根。
+
+生产目录 `/www/wwwroot/notify.tedxiong.com` 新增 `compose.egress.yaml`，.env 的绝对 COMPOSE_FILE 同时选择基础和egress overlay。
+保留原OIDC、OAuth、base路由、Secret和卷；单独只用基础compose重建会丢失Events开关和挂载。
+部署候选为 `alertbridge:egress-sdk-candidate-20261019`（基于实际v0.5.1生产镜像，仅替换已验证二进制）。
+生产独立身份 `alertbridge-production`，凭据 `/etc/egresshub-agent-production/credentials`；
+`egresshub-cert-client-production.timer` 每日UTC03:50加0–10分钟执行，失败有独立OnFailure提醒。
+续期使用已有30天阈值/90天叶证书/24小时重叠/失败回滚方案；本次新生产证书未强制提前轮换。
+
+完整test/vet/release/Docker E2E和mcpapi race通过；测试迁移后新事件mock投递200，SDK双TLS通过。
+生产实际UID10001和网络中SDK双TLS通过；健康、OAuth discovery及迁移前后两条普通通知sent200/attempts1通过。
+原客户端/渠道/路由记录、密钥和其他容器保持。生产订阅0，未创建生产自动回复任务；不将TLS成功当作Dots执行成功。
+首次生产挂载权限被umask收紧，修复后恢复，约54秒后确认healthy；期间存在短暂不可用，未覆盖恢复数据库或丢弃队列。
+
+受限配对备份 `/www/backups/alertbridge-egress-sdk-20261019`，SQLite完整性ok。
+紧急回滚 `sudo python3 /www/backups/alertbridge-egress-sdk-20261019/rollback.py`：恢复原Compose/.env及精确旧镜像、归档overlay，保留在线数据与key；
+有新生产Events订阅时先停用它们，避免旧版无法处理内部回调。脚本已语法验证，未再次切换生产做演练；回滚也有短暂重建窗口。
+测试回滚位于 `/www/wwwroot/test.tedxiong.com/app/.private/sdk-migration-20261019/rollback.py`。
+
+## v0.6.0 渠道编辑与现有生产基线正式发布
+
+v0.6.0 增加后台渠道编辑，固定 ID 与类型，非敏感配置回填，URL 和密钥留空保留。保存立即更新运行快照，不需要额外数据库迁移。此版本同时正式收录已经部署的 MCP 2.0 / Events / EgressHub 源码；旧正式版升级须注意 MCP 仅支持 `2026-07-28`，可选 Events 默认关闭。
+
+现有候选版部署升级时，保留 OIDC 和 EgressHub overlay、Secret 与挂载，只将最终生效的 image 改为 ACR 正式镜像，去掉候选版的 `pull_policy: never`。不能只改 `.env` 标签而忽略 overlay 中的硬编码镜像。上线前校验完整 Compose、备份 SQLite 与主密钥，记录旧镜像 ID；回退只恢复原配置并重建 AlertBridge，保留在线业务卷。

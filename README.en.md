@@ -4,7 +4,7 @@ AlertBridge is a single-instance notification gateway written in Go with SQLite.
 
 [中文](README.md) · [Website and simulated demo](https://opensource.tedxiong.com/alertbridge/) · [Deployment](docs/deployment.en.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md)
 
-Current release: **v0.5.1**. The public introduction at `/` is embedded in the service and Docker image, with no separate static Nginx setup. Optional administrator OIDC, notification APIs, MCP authorization and business data formats remain unchanged.
+Current release: **v0.6.0**. Existing channels can be edited from the admin console. This release includes the deployed MCP 2.0, optional Events and EgressHub SDK baseline. Notification APIs and administrator login remain compatible. MCP requires revision `2026-07-28`; the legacy initialize handshake is no longer supported.
 
 ## Features
 
@@ -53,3 +53,6 @@ A successful notification response is not delivery confirmation. Inspect `outcom
 ## Contribute
 
 Read [CONTRIBUTING](CONTRIBUTING.md), [security policy](SECURITY.md), [code of conduct](CODE_OF_CONDUCT.md) and [decisions](docs/decisions/). Licensed under [Apache-2.0](LICENSE). Maintained on a best-effort basis without an availability or support SLA.
+
+
+Optional MCP Events adds `alert.created` webhook subscriptions without Agent polling. It is disabled by default; enable with `ALERTBRIDGE_MCP_EVENTS=1` and an exact `ALERTBRIDGE_MCP_EVENT_CALLBACK_HOSTS` allowlist. One authenticated MCP 2.0 endpoint supports both query tools and Events, with per-request metadata and matching HTTP mirrors; no legacy SDK or version-header rewriting is used. Subscription credentials are encrypted; queued callbacks reuse the single worker, support bounded retries, and stop on cancellation, expiration or revoked authorization. Independent official-client/schema checks pass, and an isolated synthetic test instance is deployed; the production baseline uses the SDK, while real production Dots execution remains unverified. See [MCP guide](docs/mcp.md#主动触发) and [ADR-015](docs/decisions/ADR-015-mcp-events-webhook-subscriptions.md).

@@ -13,6 +13,8 @@ mcp_token=$(openssl rand -hex 32)
 export ALERTBRIDGE_MCP_TOKEN_SHA256=$(printf '%s' "$mcp_token" | openssl dgst -sha256 -hex | awk '{print $NF}')
 export ALERTBRIDGE_MCP_ROUTES=infrastructure
 export ALERTBRIDGE_PUBLIC_URL=https://alerts.e2e.invalid
+export ALERTBRIDGE_MCP_EVENTS=1
+export ALERTBRIDGE_MCP_EVENT_CALLBACK_HOSTS=callback.example
 
 compose() {
   ALERTBRIDGE_PORT="$port" E2E_MOCK_PORT="$mock_port" ALERTBRIDGE_ADMIN_PASSWORD_FILE="$password_file" \
@@ -46,6 +48,26 @@ until curl -fsS "http://127.0.0.1:$port/readyz" >/dev/null 2>&1; do
   fi
   sleep 0.5
 done
+
+# Exercise Events wiring in the real binary without permitting a test-only insecure callback.
+curl -fsS -H "Authorization: Bearer $mcp_token" -H 'Content-Type: application/json' \
+  -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: server/discover' -H 'Accept: application/json, text/event-stream' --data '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
+  "http://127.0.0.1:$port/mcp" > "$tmp_dir/events-discover.json"
+python3 - "$tmp_dir/events-discover.json" <<'PY_EVENTS'
+import json, sys
+r = json.load(open(sys.argv[1]))["result"]
+assert r["supportedVersions"] == ["2026-07-28"]
+assert "events" in r["capabilities"] and "tools" in r["capabilities"]
+PY_EVENTS
+curl -fsS -H "Authorization: Bearer $mcp_token" -H 'Content-Type: application/json' \
+  -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: events/list' -H 'Accept: application/json, text/event-stream' --data '{"jsonrpc":"2.0","id":2,"method":"events/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
+  "http://127.0.0.1:$port/mcp" > "$tmp_dir/events-list.json"
+python3 - "$tmp_dir/events-list.json" <<'PY_EVENTS'
+import json, sys
+r = json.load(open(sys.argv[1]))["result"]
+assert r["events"][0]["name"] == "alert.created"
+assert r["events"][0]["delivery"] == ["webhook"]
+PY_EVENTS
 
 container_id=$(compose ps -q alertbridge)
 [ "$(docker inspect "$container_id" --format '{{.Config.User}}')" = "10001:0" ] || {
@@ -102,6 +124,24 @@ channel_status=$(curl -sS -o "$tmp_dir/channel-response.html" -w '%{http_code}' 
   --data-urlencode 'keyword=AlertBridge' \
   "http://127.0.0.1:$port/admin/channels/save")
 [ "$channel_status" = 303 ] || { cat "$tmp_dir/channel-response.html"; exit 1; }
+
+# Edit an existing channel, preserving the hidden endpoint and credential.
+curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/channels?edit=feishu.test" > "$tmp_dir/channel-edit.html"
+grep -q 'name="id" value="feishu.test" readonly' "$tmp_dir/channel-edit.html"
+grep -q 'value="card" selected' "$tmp_dir/channel-edit.html"
+if grep -q 'e2e-signing-secret\|http://mockfeishu:9090/hook' "$tmp_dir/channel-edit.html"; then
+  printf 'channel editor exposed stored credentials\n' >&2
+  exit 1
+fi
+edit_status=$(curl -sS -o "$tmp_dir/channel-edit-response.html" -w '%{http_code}' -b "$tmp_dir/cookies.txt" \
+  --data-urlencode "csrf=$csrf" --data-urlencode 'id=feishu.test' \
+  --data-urlencode 'type=feishu' --data-urlencode 'enabled=on' \
+  --data-urlencode 'message_type=text' --data-urlencode 'keyword=AlertBridge-edited' \
+  "http://127.0.0.1:$port/admin/channels/save")
+[ "$edit_status" = 303 ] || exit 1
+curl -fsS -b "$tmp_dir/cookies.txt" "http://127.0.0.1:$port/admin/channels?edit=feishu.test" > "$tmp_dir/channel-edited.html"
+grep -q 'value="text" selected' "$tmp_dir/channel-edited.html"
+grep -q 'value="AlertBridge-edited"' "$tmp_dir/channel-edited.html"
 
 route_status=$(curl -sS -o "$tmp_dir/route-response.html" -w '%{http_code}' -b "$tmp_dir/cookies.txt" \
   -H 'Content-Type: application/x-www-form-urlencoded' \
@@ -211,7 +251,9 @@ until curl -fsS "http://127.0.0.1:$mock_port/count" | grep -q '"count":2'; do
   sleep 0.2
 done
 curl -fsS "http://127.0.0.1:$mock_port/last" > "$tmp_dir/last-notification.json"
-grep -Eq '时间[^+]*\+08:00' "$tmp_dir/last-notification.json"
+grep -q 'AlertBridge-edited' "$tmp_dir/last-notification.json"
+grep -q '"msg_type":"text"' "$tmp_dir/last-notification.json"
+grep -Eq '(时间|Occurred:)[^+]*\+08:00' "$tmp_dir/last-notification.json"
 
 container_id=$(compose ps -q alertbridge)
 if docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -Fq "$admin_password"; then
@@ -273,14 +315,14 @@ oauth_access=$(sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p' "$tmp_dir/oauth-to
 [ -n "$oauth_access" ] || exit 1
 oauth_status=$(curl -sS -o "$tmp_dir/oauth-tools.json" -w '%{http_code}' \
   -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-  -H "Authorization: Bearer $oauth_access" --data-binary '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+  -H "Authorization: Bearer $oauth_access" -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/list' --data-binary '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
   "http://127.0.0.1:$port/mcp")
 [ "$oauth_status" = 200 ] || exit 1
 grep -q 'list_active_incidents' "$tmp_dir/oauth-tools.json"
 mcp_status=$(curl -sS -o "$tmp_dir/mcp-response.json" -w '%{http_code}' \
   -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-  -H 'Mcp-Protocol-Version: 2025-11-25' -H "Authorization: Bearer $mcp_token" \
-  --data-binary '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_alerts","arguments":{"limit":100}}}' \
+  -H "Authorization: Bearer $mcp_token" \
+  -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: list_alerts' --data-binary '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_alerts","arguments":{"limit":100},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
   "http://127.0.0.1:$port/mcp")
 [ "$mcp_status" = 200 ] || { cat "$tmp_dir/mcp-response.json"; exit 1; }
 grep -q 'e2e-event-1' "$tmp_dir/mcp-response.json"
@@ -290,7 +332,7 @@ grep -q 'Baota E2E alert' "$tmp_dir/mcp-response.json"
 mcp_status=$(curl -sS -o "$tmp_dir/mcp-latest.json" -w '%{http_code}' \
   -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -H "Authorization: Bearer $oauth_access" \
-  --data-binary '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_alerts","arguments":{"order":"desc","limit":10}}}' \
+  -H 'MCP-Protocol-Version: 2026-07-28' -H 'Mcp-Method: tools/call' -H 'Mcp-Name: list_alerts' --data-binary '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_alerts","arguments":{"order":"desc","limit":10},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
   "http://127.0.0.1:$port/mcp")
 [ "$mcp_status" = 200 ] || exit 1
 grep -q '"received_at"' "$tmp_dir/mcp-latest.json"
@@ -302,5 +344,5 @@ mcp_status=$(curl -sS -o /dev/null -w '%{http_code}' \
 image_bytes=$(docker image inspect "$image_id" --format '{{.Size}}')
 memory_usage=$(docker stats --no-stream --format '{{.MemUsage}}' "$container_id")
 
-printf 'Docker E2E passed: empty first boot, Argon2id admin bootstrap, UI-only dynamic setup, HMAC and lightweight Bearer APIs, replay rejection, delivery, and key/config persistence.\n'
+printf 'Docker E2E passed: MCP Events discovery/catalog, empty first boot, Argon2id admin bootstrap, UI-only dynamic setup, HMAC and lightweight Bearer APIs, replay rejection, delivery, and key/config persistence.\n'
 printf 'Docker footprint: image_bytes=%s idle_memory=%s\n' "$image_bytes" "$memory_usage"

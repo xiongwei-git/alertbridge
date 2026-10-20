@@ -1,0 +1,11 @@
+{
+  "source": "EgressHub source snapshot; not a published upstream module",
+  "files": {
+    "go.mod": "8f48075140e09ec54f7a00c3bcf7642d80724f3026d0035d357889d27350d99a",
+    "client/client.go": "349304640465b13542301e535453f91954751dacc29cd0b7f7b76f2d053987e9",
+    "client/policy.go": "56c38186e4a1c08fc7a9383eb3a7865b93e9c85326a7dd800301a9c67d8b44e5",
+    "client/client_test.go": "803cfb34cd014d9f0f382a3e3cede9969834549aa54d8774388da4cd4f2bbf1f",
+    "internal/credentials/load.go": "fe7e90ed8ebeac1f100357e1ecbaf48dd728ac75fba9b9aba4293636a6619819",
+    "internal/credentials/load_test.go": "c38eceb42afcdebe86b6f963865747656cd372a450f46056399fe6ee1f9e9804"
+  }
+}

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: AlertBridge API
-  version: 1.4.2
+  version: 1.5.0
   description: Interface document revision, independent of the v0.5.1 application release. The public introduction does not replace notification HMAC/Bearer, MCP authorization or administrator login.
 paths:
   /:
@@ -22,8 +22,8 @@ paths:
         '200': { description: Same headers as GET without a response body }
   /mcp:
     post:
-      summary: Optional route-scoped read-only MCP transport
-      description: Disabled unless independently configured. Streamable HTTP JSON-RPC tools list_alerts, get_alert and list_active_incidents. list_alerts accepts order asc (default) or desc by receipt time and record ID; use desc with limit 10 for latest alerts. Cursors are direction-bound; legacy cursors remain ascending. Only ascending queries return an incremental checkpoint. See docs/mcp.md for schemas, cursors and client setup. This does not use notification ingress tokens.
+      summary: Optional route-scoped MCP tools and event subscriptions
+      description: Disabled unless independently configured. Native stateless MCP 2.0 (2026-07-28), with required params._meta protocolVersion/clientCapabilities and mirrored MCP-Protocol-Version, Mcp-Method and Mcp-Name (tool calls). No initialize handshake or legacy version rewriting. Complete results include resultType; discovery/tool catalogs include ttlMs and cacheScope. JSON-RPC tools list_alerts, get_alert and list_active_incidents. list_alerts accepts order asc (default) or desc by receipt time and record ID; use desc with limit 10 for latest alerts. Cursors are direction-bound; legacy cursors remain ascending. Only ascending queries return an incremental checkpoint. See docs/mcp.md for schemas, cursors and client setup. This does not use notification ingress tokens. With opt-in MCP Events and an exact callback host allowlist, also supports server/discover (2026-07-28), events/list, events/subscribe and events/unsubscribe for alert.created. Filters are routing_key, source, severity and status within the principal scope. Default/max lifetime is 24 hours with shorter positive ttlMs supported. No replay (cursor null); callback URL and signing secret are encrypted. Standard Webhooks challenge verification precedes activation. Callback 2xx acknowledges receipt, not Agent completion. See docs/mcp.md for complete request and response contracts and the MCP 2.0 metadata/error contracts.
       security:
         - MCPBearerAuth: []
         - MCPOAuth: ['alerts:read']

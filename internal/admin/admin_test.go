@@ -250,3 +250,30 @@ func extractCSRF(t *testing.T, body string) string {
 	}
 	return match[1]
 }
+
+func TestChannelEdit(t *testing.T) {
+	h, _ := newTestHandler(t)
+	login := serve(h, http.MethodPost, "/admin/login", url.Values{"username": {"admin"}, "password": {"correct horse battery staple"}}, nil)
+	cookie := login.Result().Cookies()[0]
+	page := serve(h, http.MethodGet, "/admin/channels?edit=feishu-test", nil, cookie)
+	for _, want := range []string{`编辑渠道`, `name="id" value="feishu-test" readonly`, `value="text" selected`, `name="keyword" maxlength="64" value="AlertBridge"`, `href="/admin/channels?edit=feishu-test#channel-editor"`} {
+		if !strings.Contains(page.Body.String(), want) {
+			t.Fatalf("missing edit control %q", want)
+		}
+	}
+	if strings.Contains(page.Body.String(), "/hook/test") {
+		t.Fatal("webhook exposed")
+	}
+	csrf := extractCSRF(t, page.Body.String())
+	form := url.Values{"csrf": {csrf}, "id": {"feishu-test"}, "type": {"feishu"}, "message_type": {"card"}, "keyword": {"Updated"}, "enabled": {"on"}}
+	if got := serve(h, http.MethodPost, "/admin/channels/save", form, cookie); got.Code != http.StatusSeeOther || got.Header().Get("Location") != "/admin/channels?ok=saved" {
+		t.Fatal("save failed")
+	}
+	updated, err := h.cfg.Gateway.ChannelForEdit(context.Background(), "feishu-test")
+	if err != nil || updated.MessageType != "card" || *updated.Keyword != "Updated" {
+		t.Fatalf("update failed: %v", err)
+	}
+	if got := serve(h, http.MethodGet, "/admin/channels?edit=missing", nil, cookie); got.Code != http.StatusNotFound {
+		t.Fatalf("missing channel status %d", got.Code)
+	}
+}

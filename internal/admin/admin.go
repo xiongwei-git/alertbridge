@@ -64,6 +64,8 @@ type pageData struct {
 	Clients              []runtimecfg.ClientView
 	IngressTokens        []runtimecfg.IngressTokenView
 	Channels             []runtimecfg.ChannelView
+	ChannelEdit          *runtimecfg.ChannelInput
+	EditRecipients       string
 	Routes               []runtimecfg.RouteView
 	Silences             []store.SilenceRecord
 	Deliveries           []store.DeliveryView
@@ -492,6 +494,19 @@ func (h *Handler) channels(w http.ResponseWriter, r *http.Request, session store
 	}
 	data := h.page(r, session, "通知渠道", "channels", "", store.DashboardStats{})
 	data.Channels = h.cfg.Gateway.Channels()
+	if id := r.URL.Query().Get("edit"); id != "" {
+		input, err := h.cfg.Gateway.ChannelForEdit(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				http.NotFound(w, r)
+			} else {
+				http.Error(w, "无法读取渠道配置", http.StatusInternalServerError)
+			}
+			return
+		}
+		data.ChannelEdit = &input
+		data.EditRecipients = strings.Join(input.SMTPRecipients, ", ")
+	}
 	h.render(w, http.StatusOK, "channels.html", data)
 }
 

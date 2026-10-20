@@ -16,3 +16,5 @@ PROJECT_MEMORY.md
 
 /dist-site/
 __pycache__/
+
+/test/mcp2/tmp/

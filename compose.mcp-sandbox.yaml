@@ -1,0 +1,19 @@
+# Local-only synthetic Dots acceptance environment; always use the dedicated project.
+services:
+  sandbox-sink:
+    build:
+      context: ./test/e2e/mock
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+  alertbridge:
+    image: alertbridge:mcp-sandbox
+    build:
+      context: .
+      args:
+        VERSION: mcp-sandbox
+    pull_policy: never
+    environment:
+      ALERTBRIDGE_ALLOW_INSECURE_ADMIN_COOKIE: ${SANDBOX_INSECURE_COOKIE:-1}
+      ALERTBRIDGE_ALLOW_INSECURE_HTTP: "1"
+    depends_on: [sandbox-sink]

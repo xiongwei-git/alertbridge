@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/xiongwei-git/alertbridge/internal/channel"
@@ -12,6 +13,7 @@ import (
 )
 
 type Config struct {
+	EventSenderFor  func(context.Context, *store.Delivery) (channel.Sender, error)
 	PollInterval    time.Duration
 	LeaseDuration   time.Duration
 	RetryDelays     []time.Duration
@@ -71,6 +73,9 @@ func (w *Worker) Run(ctx context.Context) {
 			if deleted > 0 {
 				w.logger.Info("expired event records pruned", "count", deleted)
 			}
+			if err := w.store.PruneEventSubscriptions(ctx, now); err != nil && !errors.Is(err, context.Canceled) {
+				w.logger.Error("event subscription cleanup failed", "error", err)
+			}
 			nextCleanup = now.Add(time.Hour)
 		}
 		processed, err := w.ProcessOne(ctx, now)
@@ -94,6 +99,14 @@ func (w *Worker) ProcessOne(ctx context.Context, now time.Time) (bool, error) {
 		return false, err
 	}
 	sender, ok := w.senderFor(delivery.ChannelID)
+	if strings.HasPrefix(delivery.ChannelID, "@mcp-event:") {
+		ok = false
+		if w.cfg.EventSenderFor != nil {
+			var resolveErr error
+			sender, resolveErr = w.cfg.EventSenderFor(ctx, delivery)
+			ok = resolveErr == nil
+		}
+	}
 	if !ok {
 		err := w.store.CompleteFailure(ctx, delivery.ID, delivery.Attempts, now, "channel is unavailable", 0, true)
 		return true, err

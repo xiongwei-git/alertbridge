@@ -139,3 +139,65 @@ func TestManagerChannelRouteAndSilenceUpdatesAreImmediate(t *testing.T) {
 		t.Fatal("silence matching is incorrect")
 	}
 }
+
+func TestChannelEditRoundTripPreservesCredentials(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "edit.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	cipher, err := securestore.New(bytes.Repeat([]byte{8}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := New(context.Background(), Options{Database: database, Cipher: cipher})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyword := "original"
+	for _, input := range []ChannelInput{
+		{ID: "feishu", Type: "feishu", Enabled: true, Endpoint: "https://open.feishu.cn/open-apis/bot/v2/hook/test", Secret: "signing-secret", MessageType: "text", Keyword: &keyword},
+		{ID: "telegram", Type: "telegram", Secret: "bot-secret", ChatID: "-100123"},
+		{ID: "ntfy", Type: "ntfy", Endpoint: "https://ntfy.sh/private-topic", Secret: "ntfy-secret"},
+		{ID: "smtp", Type: "smtp", SMTPHost: "smtp.example.com", SMTPPort: 587, SMTPUsername: "user", Secret: "smtp-secret", SMTPFrom: "ops@example.com", SMTPRecipients: []string{"owner@example.com"}, SMTPMode: "starttls"},
+	} {
+		t.Run(input.Type, func(t *testing.T) {
+			ctx := context.Background()
+			if err := manager.UpsertChannel(ctx, input); err != nil {
+				t.Fatal(err)
+			}
+			record, err := database.GetChannel(ctx, input.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, err := manager.decryptConfig(record.ConfigCipher)
+			if err != nil {
+				t.Fatal(err)
+			}
+			edit, err := manager.ChannelForEdit(ctx, input.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if edit.Secret != "" || edit.Endpoint != "" {
+				t.Fatal("edit exposes credentials")
+			}
+			if edit.Enabled != input.Enabled || edit.ChatID != input.ChatID || edit.SMTPMode != input.SMTPMode || edit.SMTPPort != input.SMTPPort || edit.MessageType != input.MessageType {
+				t.Fatal("edit settings not populated")
+			}
+			if err := manager.UpsertChannel(ctx, edit); err != nil {
+				t.Fatal(err)
+			}
+			record, err = database.GetChannel(ctx, input.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			after, err := manager.decryptConfig(record.ConfigCipher)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if before.Webhook != after.Webhook || before.SigningSecret != after.SigningSecret || before.BotToken != after.BotToken || before.Token != after.Token || before.SMTPPassword != after.SMTPPassword || before.Endpoint != after.Endpoint || before.Keyword != after.Keyword || strings.Join(before.SMTPRecipients, ",") != strings.Join(after.SMTPRecipients, ",") {
+				t.Fatal("edit round trip changed stored configuration")
+			}
+		})
+	}
+}

@@ -187,3 +187,12 @@ signature = hex(HMAC-SHA256(client_secret, message))
 - `GET /readyz`：SQLite 可访问时返回 `200`，否则返回 `503`。
 
 健康检查不需要认证，也不会返回内部配置或版本信息。
+
+
+## 可选 MCP Events
+
+独立启用 `ALERTBRIDGE_MCP_EVENTS=1` 与精确回调主机白名单后，同一认证 `POST /mcp` 提供 `server/discover`（`2026-07-28`）、`events/list`、`events/subscribe`、`events/unsubscribe`。同一 MCP 2.0 实现同时支持查询与订阅，不再使用旧版 SDK 或版本头改写，不新增入站告警接口。每请求必须携带规范 `_meta`、版本和方法镜像头；工具调用还需名称镜像头。成功响应含 `resultType:complete`，发现/工具列表含缓存字段；无 initialize 握手。
+
+事件 `alert.created` 可按授权路由、来源、严重程度和状态过滤，只推送新 accepted/queued 告警的摘要与内部 ID。订阅使用平台提供的 HTTPS Webhook 和 Standard Webhooks 签名密钥，先验证 challenge，再持久化订阅；默认/最长 24 小时，支持续期、取消、五分钟双密钥轮换，无历史回放（`cursor:null`）。权限撤销或过期停止投递；410/413 不重试。回调 2xx 只表示接收。公开入站响应中的 `deliveries` 仍只计算配置的通知渠道，MCP 回调任务不会改变该数量；只读投递详情可见内部 `@mcp-event:` 任务及状态，但不含回调凭据。
+
+详细请求、响应、安全边界与真实账号验收见 [MCP Events](mcp.md#主动触发)。本功能已完成本地独立验证，并部署到隔离测试站 test.tedxiong.com；生产未升级，真实 Dots 订阅和唤醒未验收。

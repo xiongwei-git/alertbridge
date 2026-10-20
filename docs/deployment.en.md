@@ -22,19 +22,19 @@ Do not put registry passwords in command arguments, `.env`, service environment 
 
 ## Minimal installation
 
-Download the Compose file for the existing release. Historical release files are immutable: v0.5.1 still defaults to GHCR, so explicitly set the ACR image override below. Current main and future releases default to public ACR. This workflow migration does not publish a new version; existing ACR v0.5.1 remains usable.
+Download the matching v0.6.0 Compose file. The public ACR endpoint is the default. Historical release files remain immutable; older files that default to GHCR require an explicit ACR image override.
 
 ```sh
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.1/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.0/compose.yaml
 umask 077
 mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
   'ALERTBRIDGE_IMAGE=crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com/ted_docker_mirror/ted' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.5.1' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.6.0' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env

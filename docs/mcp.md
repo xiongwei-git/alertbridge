@@ -1,6 +1,6 @@
-# Agent 只读 MCP 接入
+# Agent MCP 查询与事件订阅
 
-AlertBridge 在同一 Go 进程提供 `/mcp`，使用官方 Go SDK 的无状态 Streamable HTTP + JSON 响应。默认关闭，不增加数据库连接、Worker 或独立容器。支持 MCP 2025-11-25 客户端；不提供旧式 `/sse` 入口。
+AlertBridge 在同一 Go 进程、同一认证 `/mcp` 同时提供**告警查询工具**与**可选的新告警事件订阅**。统一使用 MCP 2.0（`2026-07-28`）的无状态 HTTP 请求；不使用 `initialize`，不改写协议版本，也没有旧版 SDK 转发。默认关闭 MCP，Events 另行显式启用；不增加数据库连接、Worker 或容器。
 
 ## Dots 接入
 
@@ -82,7 +82,80 @@ URL：https://你的服务域名/mcp
 
 ## 主动触发
 
-当前没有事件订阅或主动唤醒功能，`tools/list` 和 `tools/call` 仅支持按需查询。后台管理员 OIDC 登录不增加 Agent 工具或权限。
+默认只有按需查询。显式开启 MCP Events 后，可向 Dots 或支持 Events 的 Work Cloud 订阅聊天主动发送新告警，不需要 Agent 定期轮询。它不会唤醒任意本地 Codex 聊天；支持范围及工作区权限以 [OpenAI 官方 MCP Events 文档](https://developers.openai.com/plugins/build/mcp-events)为准。
+
+```dotenv
+ALERTBRIDGE_MCP_EVENTS=1
+ALERTBRIDGE_MCP_EVENT_CALLBACK_HOSTS=实际平台回调的精确主机名
+```
+
+前提是已配置上文的 MCP OAuth 或独立 Bearer。回调主机名必须来自实际平台配置，支持逗号分隔；不填、通配、非 HTTPS、非 443 端口、私网地址或重定向均不允许。不要把 OAuth 登录回调地址误当成 Events Webhook 地址。未启用不注册 Events 方法。现已部署独立测试入口 `https://test.tedxiong.com/mcp`，仅使用模拟告警；生产未升级。2026-10-18 已通过真实 Dots 的订阅、回调挑战、签名 Webhook 接收、自动唤醒及事件字段读取验收；真实严重度过滤及取消后停止新增投递也已验收。测试使用的临时出站隧道在验收后已撤回，长期出站尚未部署，持续运行仍待验证。
+
+### 协议与过滤
+
+每个 POST 都必须包含 `Content-Type: application/json`、`Accept: application/json, text/event-stream`、`MCP-Protocol-Version: 2026-07-28`、`Mcp-Method`；`tools/call` 还必须有 `Mcp-Name`。协议版本、方法和名称均与正文一致。正文 `params._meta` 必须包含 `io.modelcontextprotocol/protocolVersion` 和对象类型的 `io.modelcontextprotocol/clientCapabilities`。HTTP 400 的 `-32020` 表示头体不一致，`-32022` 表示版本不支持，`-32602` 表示元数据或参数不合法；未知方法返回 HTTP 404 / `-32601`。成功响应统一含 `resultType: complete` 与服务身份信息，发现和工具列表还包含 `ttlMs:0`、`cacheScope:private`。JSON-RPC `2.0` 是消息格式，与 MCP 协议版本是两个概念。
+
+```json
+{
+  "jsonrpc": "2.0", "id": "discover", "method": "server/discover",
+  "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientCapabilities": {}
+    }
+  }
+}
+```
+
+下方订阅示例同时示出必需元数据；实际客户端需自行携带匹配的 HTTP 请求头。旧版仅带版本头、缺少 `_meta` 的请求会被拒绝，不再用静默降级掩盖错误。
+
+同一认证 `/mcp` 新增 `server/discover`（声明 `2026-07-28`、`tools` 和 `events`）、`events/list`、`events/subscribe`、`events/unsubscribe`。查询与订阅均由统一 MCP 2.0 实现直接处理，声明的版本与实际请求/响应一致。
+
+唯一事件 `alert.created`：可选精确过滤 `routing_key`、`source`、`severity`（`info/warning/critical`）、`status`（`firing/resolved/info/test`）。未指定路由时覆盖当前身份被授权的路由，不能指定范围外路由。仅新入库且 `outcome=queued` 的事件触发；入站幂等重复、静默、故障去重和孤立恢复不会触发。载荷 `data` 只有 `id`、`source`、`routing_key`、`status`、`severity`、`title`，用 `get_alert(data.id)` 取详情。
+
+订阅请求结构：
+
+```json
+{
+  "jsonrpc": "2.0", "id": 1, "method": "events/subscribe",
+  "params": {
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientCapabilities": {}
+    },
+    "name": "alert.created",
+    "arguments": {"routing_key": "ops", "severity": "critical"},
+    "delivery": {
+      "mode": "webhook",
+      "url": "https://实际允许的回调主机/平台提供的路径",
+      "secret": "whsec_平台提供的Base64签名密钥"
+    },
+    "cursor": null,
+    "ttlMs": 86400000
+  }
+}
+```
+
+`delivery.url/secret` 由平台提供，不手动放入聊天或提交到仓库。签名密钥必须为 `whsec_` 加标准 Base64，解码 24–64 字节。服务器发送带签名的随机 challenge，要求 2xx 且原样返回 challenge，失败返回 `-32015 CallbackEndpointError`。同一授权主体、回调地址与签名密钥的验证缓存五分钟。订阅身份由授权主体、授权策略、回调 URL、事件名及规范化参数确定；重复请求更新已有订阅。默认/最长 24 小时，正整数 `ttlMs` 可请求更短寿命；`ttlMs:null` 仍授予有限期限。响应含 `id`、`refreshBefore`、`cursor:null`、`truncated:false`。
+
+续期使用相同订阅身份；密钥替换后五分钟同时签新旧密钥。取消使用相同 `name`、`arguments`、`delivery.mode/url`，不需密钥，幂等返回 `{}`。每个身份最多 100 个、全局最多 1,000 个订阅。
+
+### 投递和恢复边界
+
+- 新告警与匹配的投递任务原子入库，复用现有单 Worker；订阅及回调凭据加密持久化。
+- Standard Webhooks 请求头为 `webhook-id`、`webhook-timestamp`、`webhook-signature`、`X-MCP-Subscription-Id`；每次重试保持事件 ID 和正文，更新时间及签名。
+- 仅网络错误、408/425/429、5xx 按现有退避与次数上限重试；410/413 不重试，410 同时取消订阅。2xx 仅表示接收，Agent 异步执行可受合批影响。
+- 每次投递重新检查授权、订阅代次与过期；OAuth 授权撤销、固定令牌/路由策略变更、取消订阅或过期后停止。已发出的网络请求无法撤回。关闭 Events 后不再投递；旧任务会按不可用处理。
+- 没有历史回放能力，`cursor` 只接受空/`null`。活跃订阅的已入队任务可在重启后恢复；订阅空窗、过期或最终失败的事件不保证补发，可通过查询工具核对。重新创建订阅不会复活旧任务。
+- 数据库与主密钥必须一起备份；回调 URL/密钥不在日志或工具输出中显示。出站连接在每次解析后校验公网地址并直连该 IP，TLS 校验原主机，禁用代理和重定向。
+
+### 本地与真实账号验收
+
+`./test/mcp2/run.sh` 启动独立模拟环境，用官方 TypeScript Client 2.3.1 固定版本连接（禁止降级），并使用固定提交及 SHA-256 的官方 MCP 2.0 JSON Schema 做独立验证。证据写入忽略目录 `test/mcp2/tmp/evidence`；来源、复现与范围见 [验证说明](../test/mcp2/README.md)。
+
+`go test ./internal/mcpapi ./internal/store ./internal/worker` 覆盖协议、独立签名接收器、过滤、持久化重试、取消、过期、撤销和轮换；测试接收器只运行于本地测试边界，不放宽生产 HTTPS/出站校验。完整回归还包括 Go/vet、release 和隔离 Docker E2E。
+
+部署后另行验收：刷新插件工具与事件列表，让 Dots 监控 `alert.created` 并指定响应行为；确认真实 `events/subscribe`、签名验证、Webhook 2xx、Agent 响应，以及不匹配事件不触发、取消后停止。这些不能由本地模拟替代。架构边界见 [ADR-015](decisions/ADR-015-mcp-events-webhook-subscriptions.md)。
 
 ## 任务导向案例
 

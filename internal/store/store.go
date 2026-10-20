@@ -49,10 +49,12 @@ type AcceptResult struct {
 }
 
 type Delivery struct {
-	ID        string
-	ChannelID string
-	Attempts  int
-	Event     domain.Event
+	EventRecordID       string
+	SubscriptionVersion string
+	ID                  string
+	ChannelID           string
+	Attempts            int
+	Event               domain.Event
 }
 
 type DeliveryStatus struct {
@@ -143,7 +145,7 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("configure sqlite: %w", err)
 		}
 	}
-	if _, err := db.Exec(schema + adminSchema + oauthSchema); err != nil {
+	if _, err := db.Exec(schema + adminSchema + oauthSchema + eventSubscriptionSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate sqlite: %w", err)
 	}
@@ -248,7 +250,7 @@ func (s *Store) AcceptEvent(ctx context.Context, p AcceptParams) (AcceptResult, 
 	defer func() { _ = tx.Rollback() }()
 	var existingID, existingOutcome string
 	var existingDeliveries int
-	err = tx.QueryRowContext(ctx, `SELECT e.id, e.outcome, COUNT(d.id) FROM events e LEFT JOIN deliveries d ON d.event_record_id=e.id
+	err = tx.QueryRowContext(ctx, `SELECT e.id, e.outcome, COUNT(d.id) FROM events e LEFT JOIN deliveries d ON d.event_record_id=e.id AND d.channel_id NOT LIKE '@mcp-event:%'
 WHERE e.client_id=? AND e.event_id=? GROUP BY e.id`, p.ClientID, p.Event.EventID).Scan(&existingID, &existingOutcome, &existingDeliveries)
 	if err == nil {
 		if err := tx.Commit(); err != nil {
@@ -330,6 +332,11 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, recordID, p.ClientID, p.Event.EventI
 			deliveries++
 		}
 	}
+	if outcome == OutcomeQueued {
+		if err := enqueueEventSubscriptions(ctx, tx, recordID, p); err != nil {
+			return AcceptResult{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return AcceptResult{}, err
 	}
@@ -342,15 +349,15 @@ func (s *Store) ClaimDelivery(ctx context.Context, now time.Time, lease time.Dur
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	row := tx.QueryRowContext(ctx, `SELECT d.id,d.channel_id,d.attempts,e.event_id,e.source,e.routing_key,e.status,e.severity,e.title,e.message,e.occurred_at,e.dedupe_key,e.labels_json,e.url,e.incident_started_at
-FROM deliveries d JOIN events e ON e.id=d.event_record_id
+	row := tx.QueryRowContext(ctx, `SELECT d.id,d.event_record_id,COALESCE(m.generation,''),d.channel_id,d.attempts,e.event_id,e.source,e.routing_key,e.status,e.severity,e.title,e.message,e.occurred_at,e.dedupe_key,e.labels_json,e.url,e.incident_started_at
+FROM deliveries d JOIN events e ON e.id=d.event_record_id LEFT JOIN mcp_event_deliveries m ON m.delivery_id=d.id
 WHERE ((d.status IN ('pending','retrying') AND d.next_attempt_at<=?) OR (d.status='processing' AND d.lease_until<=?))
 ORDER BY d.next_attempt_at,d.created_at LIMIT 1`, now.UnixMilli(), now.UnixMilli())
 	var d Delivery
 	var status, severity, labelsJSON string
 	var occurredMS int64
 	var incidentMS sql.NullInt64
-	if err := row.Scan(&d.ID, &d.ChannelID, &d.Attempts, &d.Event.EventID, &d.Event.Source, &d.Event.RoutingKey, &status, &severity,
+	if err := row.Scan(&d.ID, &d.EventRecordID, &d.SubscriptionVersion, &d.ChannelID, &d.Attempts, &d.Event.EventID, &d.Event.Source, &d.Event.RoutingKey, &status, &severity,
 		&d.Event.Title, &d.Event.Message, &occurredMS, &d.Event.DedupeKey, &labelsJSON, &d.Event.URL, &incidentMS); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

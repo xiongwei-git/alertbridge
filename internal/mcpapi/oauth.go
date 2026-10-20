@@ -22,6 +22,7 @@ const OAuthClientID = "alertbridge-dots"
 const OAuthScope = "alerts:read"
 
 type OAuth struct {
+	eventsEnabled                              bool
 	db                                         *store.Store
 	issuer, resource, redirect, policy, routes string
 	session                                    func(*http.Request) (string, bool)
@@ -92,7 +93,7 @@ func (o *OAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var consentTemplate = template.Must(template.New("consent").Parse(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>AlertBridge 只读授权</title><h1>允许 Dots 查询告警？</h1><p>客户端：alertbridge-dots</p><p>权限：查询告警、投递状态和活跃故障。无法修改配置或恢复故障。</p><p>可见路由：{{.Routes}}</p><p>回调地址：{{.Redirect}}</p><form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button name="decision" value="allow">允许只读访问</button> <button name="decision" value="deny">取消</button></form></html>`))
+var consentTemplate = template.Must(template.New("consent").Parse(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>AlertBridge 只读授权</title><h1>允许 Dots 查询告警？</h1><p>客户端：alertbridge-dots</p><p>权限：查询告警、投递状态和活跃故障。无法修改配置或恢复故障。</p><p>{{if .Events}}新告警可通过单独创建的 MCP Events 订阅推送到已验证的回调地址；不允许修改故障。{{end}}</p><p>可见路由：{{.Routes}}</p><p>回调地址：{{.Redirect}}</p><form method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button name="decision" value="allow">允许只读访问</button> <button name="decision" value="deny">取消</button></form></html>`))
 
 func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 	// Chromium applies form-action to the POST's redirect chain as well.
@@ -124,7 +125,10 @@ func (o *OAuth) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == "GET" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = consentTemplate.Execute(w, struct{ Routes, Redirect, CSRF string }{o.routes, o.redirect, csrf})
+		_ = consentTemplate.Execute(w, struct {
+			Routes, Redirect, CSRF string
+			Events                 bool
+		}{o.routes, o.redirect, csrf, o.eventsEnabled})
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)

@@ -112,6 +112,7 @@ func TestOAuthPKCEAndRefresh(t *testing.T) {
 		r.Header.Set("Authorization", "Bearer "+token)
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("Accept", "application/json, text/event-stream")
+		modernTestRequest(t, r)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
 		return w.Code

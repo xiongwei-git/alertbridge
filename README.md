@@ -6,7 +6,7 @@ AlertBridge 是用 Go 和 SQLite 实现的单实例通知网关。它接收 HTTP
 
 [项目网站与模拟 Demo](https://opensource.tedxiong.com/alertbridge/) · [English](README.en.md) · [部署](docs/deployment.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md) · [发布记录](CHANGELOG.md)
 
-当前发布版本：**v0.5.1**。项目介绍页已内嵌于服务并随镜像部署，保留可选管理员 OIDC 登录；通知 API、MCP 授权和业务数据格式保持兼容。
+当前发布版本：**v0.6.0**。支持已有渠道编辑，并正式收录现有生产 MCP 2.0、可选 Events 与 EgressHub SDK 基线；通知 API 与管理员登录保持兼容。MCP 协议固定为 `2026-07-28`，不再支持旧版 initialize 握手。
 
 运行服务的域名根路径 `/` 自动提供无需登录的项目介绍页，不展示业务数据，无需额外配置 Nginx 静态页面。API、MCP 和后台认证不变。见[介绍页说明及旧配置迁移](docs/showcase-deployment.md#运行服务的公开根路径介绍页)。
 
@@ -18,7 +18,7 @@ AlertBridge 是用 Go 和 SQLite 实现的单实例通知网关。它接收 HTTP
 | 一次性通知 | `POST /api/v1/notifications`；请求头 Bearer 令牌，服务端固定来源、路由和级别 |
 | 故障状态 | `firing` / `resolved`，按客户端、路由和去重键关联；支持去重和静默窗口 |
 | 出站投递 | 飞书、Telegram、ntfy、TLS SMTP；SQLite 持久队列、退避重试、死信及人工重新入队 |
-| 管理后台 | 服务端渲染；配置客户端、渠道、路由、静默窗口，查询投递记录 |
+| 管理后台 | 服务端渲染；配置客户端、渠道（支持已有渠道编辑）、路由、静默窗口，查询投递记录 |
 | 管理员登录 | 本地密码；可选 OIDC Authorization Code + PKCE S256，按 issuer + subject 绑定管理员 |
 | Agent 查询 | 可选只读 MCP；查询历史、详情与活跃故障，支持 Dots OAuth 或独立固定 Bearer |
 
@@ -54,10 +54,10 @@ cd alertbridge
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.5.1/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.0/compose.yaml
 ```
 
-按 [部署指南](docs/deployment.md) 创建 `.env` 和文件型管理员 Secret，将 `ALERTBRIDGE_IMAGE_TAG` 固定为 `v0.5.1`，再启动服务。基础部署使用密码登录；OIDC 另需同版本 `compose.oidc.yaml`、身份提供方和受限配置文件。
+按 [部署指南](docs/deployment.md) 创建 `.env` 和文件型管理员 Secret，将 `ALERTBRIDGE_IMAGE_TAG` 固定为 `v0.6.0`，再启动服务。基础部署使用密码登录；OIDC 另需同版本 `compose.oidc.yaml`、身份提供方和受限配置文件。
 
 应用只绑定 `127.0.0.1:18080`，由 Nginx 提供 HTTPS。唯一镜像发布源改为阿里云 ACR，支持 `linux/amd64` 与 `linux/arm64`：
 
@@ -65,7 +65,7 @@ curl -fsSLo compose.yaml \
 crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com/ted_docker_mirror/ted
 ```
 
-当前仓库拉取需要授权账号及 `docker login`，不支持匿名部署。现有 `v0.5.1` 镜像已在 ACR；旧版本 Compose 不会重写，请按[部署指南](docs/deployment.md)在 `.env` 明确设置 `ALERTBRIDGE_IMAGE`。后续版本直接构建并发布到 ACR，不再发布 GHCR 或执行跨仓库复制；历史 GHCR 镜像保留。公网地址用于 CI 和通用部署，阿里云同地域 ECS 可显式选择 VPC 地址。SBOM 与来源证明保留并签证为 GitHub 构建产物，见 [ADR-014](docs/decisions/ADR-014-acr-only-image-publishing.md)。此次流程调整不代表发布了新版本。
+当前仓库拉取需要授权账号及 `docker login`，不支持匿名部署。现有 `v0.5.1` 镜像已在 ACR；旧版本 Compose 不会重写，请按[部署指南](docs/deployment.md)在 `.env` 明确设置 `ALERTBRIDGE_IMAGE`。后续版本直接构建并发布到 ACR，不再发布 GHCR 或执行跨仓库复制；历史 GHCR 镜像保留。公网地址用于 CI 和通用部署，阿里云同地域 ECS 可显式选择 VPC 地址。SBOM 与来源证明保留并签证为 GitHub 构建产物，见 [ADR-014](docs/decisions/ADR-014-acr-only-image-publishing.md)。
 
 ## 接入接口
 
@@ -96,7 +96,7 @@ curl --fail-with-body --silent --show-error \
 - **管理员 OIDC**：AlertBridge 是身份提供方的客户端，验证 ID Token 后创建本地管理员会话。只接受配置的 issuer + subject；用户名和邮箱不授予权限。退出仅清除本应用会话。当前以 Tinyauth 验证，配置和限制见 [OIDC 部署](docs/deployment.md#可选-tinyauth-oidc-统一登录)。
 - **MCP OAuth**：AlertBridge 为 Dots 的只读查询签发令牌。管理员先用密码或 OIDC 登录，再批准指定路由的读取权限；不向 Dots 提供身份提供方的 Token。
 
-MCP 提供 `list_alerts`、`get_alert`、`list_active_incidents`。最近十条使用 `{"order":"desc","limit":10}`。它不确认、恢复或修改故障，也不主动唤醒 Agent。配置、分页和撤销见 [MCP 指南](docs/mcp.md)，任务示例见 [Dots 接入](docs/dots-example.md)。
+MCP 提供 `list_alerts`、`get_alert`、`list_active_incidents`。最近十条使用 `{"order":"desc","limit":10}`。它不确认、恢复或修改故障。同一认证 MCP 2.0 入口支持查询与订阅，无版本降级；可选 MCP Events 通过已验证的签名 Webhook 向订阅聊天推送新告警，无需 Agent 定期查询；默认关闭，真实 Dots 触发仍需账号验收。配置、分页和撤销见 [MCP 指南](docs/mcp.md)，任务示例见 [Dots 接入](docs/dots-example.md)。
 
 ## 数据与恢复
 
@@ -135,3 +135,5 @@ python3 test/site/test_example.py
 ## 许可证
 
 [Apache License 2.0](LICENSE)。AlertBridge 是独立开源项目。
+
+MCP Events 可通过 `ALERTBRIDGE_MCP_EVENT_EGRESS_FILE` 显式接入受限 mTLS CONNECT 网关；配置与私钥为只读私密文件，故障不回落直连。目标 DNS 公网校验及 IP 绑定在认证网关执行，业务 TLS 仍由应用验证。回调适配导入公共 `egresshub/client`，源码快照随构建固定；普通通知渠道保持原通路。详见[部署文档](docs/deployment.md#公共-sdk-接入与生产迁移2026-10-19)。

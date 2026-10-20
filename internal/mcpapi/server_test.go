@@ -48,7 +48,7 @@ func TestReadOnlyMCP(t *testing.T) {
 		r := httptest.NewRequest("POST", "http://localhost/mcp", bytes.NewBufferString(body))
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("Accept", "application/json, text/event-stream")
-		r.Header.Set("Mcp-Protocol-Version", "2025-11-25")
+		modernTestRequest(t, r)
 		if auth != "" {
 			r.Header.Set("Authorization", "Bearer "+auth)
 		}
@@ -62,7 +62,7 @@ func TestReadOnlyMCP(t *testing.T) {
 	if w := call("wrong", `{}`); w.Code != 401 {
 		t.Fatal(w.Code)
 	}
-	for _, body := range []string{`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`} {
+	for _, body := range []string{`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`} {
 		w := call(token, body)
 		if w.Code != 200 {
 			t.Fatalf("%d %s", w.Code, w.Body.String())
