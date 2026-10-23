@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="AlertBridge v0.6.1：Go + SQLite 单实例通知网关，支持 HMAC 事件、持久投递、只读 MCP 与可选管理员 OIDC。">
+<meta name="description" content="AlertBridge v0.6.3：Go + SQLite 单实例通知网关，支持 HMAC 事件、持久投递、只读 MCP 与可选管理员 OIDC。">
 <title>AlertBridge — Go + SQLite 通知网关</title>
 <link rel="icon" href="mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css?v=0.5.0-docs.1">
@@ -14,7 +14,7 @@
 <a class="skip" href="#main">跳到正文</a>
 <header class="wrap nav">
 <a class="brand" href="./">
-<img src="mark.svg" alt="" width="30" height="30">AlertBridge<span class="tag">v0.6.1</span>
+<img src="mark.svg" alt="" width="30" height="30">AlertBridge<span class="tag">v0.6.3</span>
 </a>
 <nav aria-label="主导航">
 <a href="../">项目集合</a>
@@ -173,8 +173,8 @@ cd alertbridge
 </article>
 <article class="guide">
 <span class="number">02 / PRODUCTION</span>
-<h3>部署 v0.6.1</h3>
-<p>使用唯一发布源阿里云 ACR 的 v0.6.1 镜像和同版本 Compose，先以获授权的 Registry 账号登录，并按部署指南设置镜像地址。端口只绑定 loopback，Nginx 提供 HTTPS；数据库与主密钥卷成对备份。</p>
+<h3>部署 v0.6.3</h3>
+<p>使用唯一发布源阿里云 ACR 的 v0.6.3 镜像和同版本 Compose，先以获授权的 Registry 账号登录，并按部署指南设置镜像地址。端口只绑定 loopback，Nginx 提供 HTTPS；数据库与主密钥卷成对备份。</p>
 <div class="link-list">
 <a href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/deployment.md">生产部署与恢复指南 ↗</a>
 <a href="https://github.com/xiongwei-git/alertbridge/blob/main/docs/api.md">完整事件与轻量通知契约 ↗</a>
@@ -206,7 +206,7 @@ cd alertbridge
 </div>
 </section>
 <section class="wrap section" id="oidc">
-<div class="eyebrow">v0.6.1 / ADMINISTRATOR LOGIN</div>
+<div class="eyebrow">v0.6.3 / ADMINISTRATOR LOGIN</div>
 <h2>可选管理员 OIDC</h2>
 <div class="split">
 <div><h3>身份提供方验证，本地会话</h3>
@@ -242,7 +242,7 @@ cd alertbridge
 </main>
 <footer class="wrap footer">
 <span>AlertBridge / by xiongwei-git</span>
-<span>v0.6.1 · Apache-2.0 · 单实例部署</span>
+<span>v0.6.3 · Apache-2.0 · 单实例部署</span>
 <a href="https://github.com/xiongwei-git/alertbridge">Source ↗</a>
 </footer>
 </body>

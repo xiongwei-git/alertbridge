@@ -37,7 +37,7 @@ AlertBridge 容器
 mkdir -p /www/wwwroot/alertbridge
 cd /www/wwwroot/alertbridge
 curl -fsSLo compose.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.1/compose.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.3/compose.yaml
 ```
 
 也可以在宝塔文件管理器中新建 `compose.yaml`，从对应 GitHub Release 复制同版本文件。生产环境应锁定完整版本号，不要长期使用 `latest`。
@@ -53,7 +53,7 @@ mkdir -p secrets
 chmod 700 secrets
 printf '%s\n' \
   'ALERTBRIDGE_IMAGE=crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com/ted_docker_mirror/ted' \
-  'ALERTBRIDGE_IMAGE_TAG=v0.6.1' \
+  'ALERTBRIDGE_IMAGE_TAG=v0.6.3' \
   'ALERTBRIDGE_PORT=18080' \
   'ALERTBRIDGE_ADMIN_USERNAME=admin' \
   'ALERTBRIDGE_DISPLAY_TIMEZONE=Asia/Shanghai' > .env
@@ -86,7 +86,7 @@ chmod 600 .env
 docker login crpi-2q1p9uwje81xbddu.cn-shanghai.personal.cr.aliyuncs.com -u '<获授权的 Registry 登录名>'
 ```
 
-当前主分支 Compose 默认使用公网 ACR；已发布的 `v0.5.1` 等历史 Compose 文件不会重写，所以上文 `.env` 显式设置 `ALERTBRIDGE_IMAGE`，使旧文件也从 ACR 拉取。当前发布为 `v0.6.1`，历史镜像仍保留。镜像仓库需授权账号访问；公开 GitHub 仓库不等于公开 ACR 拉取权限。
+当前主分支 Compose 默认使用公网 ACR；已发布的 `v0.5.1` 等历史 Compose 文件不会重写，所以上文 `.env` 显式设置 `ALERTBRIDGE_IMAGE`，使旧文件也从 ACR 拉取。当前发布为 `v0.6.3`，历史镜像仍保留。镜像仓库需授权账号访问；公开 GitHub 仓库不等于公开 ACR 拉取权限。
 
 ```sh
 docker compose config
@@ -404,7 +404,7 @@ chmod 700 secrets
 chown 10001:0 secrets/oidc.json
 chmod 400 secrets/oidc.json
 curl -fsSLo compose.oidc.yaml \
-  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.1/compose.oidc.yaml
+  https://raw.githubusercontent.com/xiongwei-git/alertbridge/v0.6.3/compose.oidc.yaml
 ```
 
 将第 9 节的 `COMPOSE_FILE` 和绝对文件路径加入 `.env`，确认镜像标签为 `v0.5.0` 或更高的兼容正式版本，然后：

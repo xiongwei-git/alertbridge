@@ -4,7 +4,7 @@ AlertBridge is a single-instance notification gateway written in Go with SQLite.
 
 [中文](README.md) · [Website and simulated demo](https://opensource.tedxiong.com/alertbridge/) · [Deployment](docs/deployment.en.md) · [API](docs/api.md) · [MCP / Dots](docs/mcp.md)
 
-Current release: **v0.6.1**. Existing channels can be edited from the admin console. This release includes the deployed MCP 2.0, optional Events and EgressHub SDK baseline. Notification APIs and administrator login remain compatible. MCP requires revision `2026-07-28`; the legacy initialize handshake is no longer supported.
+Current release: **v0.6.3**. Existing channels can be edited from the admin console. This release includes the deployed MCP 2.0, optional Events and EgressHub SDK baseline. Notification APIs and administrator login remain compatible. MCP requires revision `2026-07-28`; the legacy initialize handshake is no longer supported.
 
 ## Features
 
