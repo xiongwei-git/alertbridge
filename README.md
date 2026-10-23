@@ -137,3 +137,5 @@ python3 test/site/test_example.py
 [Apache License 2.0](LICENSE)。AlertBridge 是独立开源项目。
 
 MCP Events 可通过 `ALERTBRIDGE_MCP_EVENT_EGRESS_FILE` 显式接入受限 mTLS CONNECT 网关；配置与私钥为只读私密文件，故障不回落直连。目标 DNS 公网校验及 IP 绑定在认证网关执行，业务 TLS 仍由应用验证。回调适配导入公共 `egresshub/client`，源码快照随构建固定；普通通知渠道保持原通路。详见[部署文档](docs/deployment.md#公共-sdk-接入与生产迁移2026-10-19)。
+
+生产生命周期事件支持去重窗口内严重级别升级直达与迟到事件保护；检查项关联、恢复证据和 Bruce 10 分钟摘要职责见 [API 降噪边界](docs/api.md#生产告警降噪边界)。

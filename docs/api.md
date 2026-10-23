@@ -146,7 +146,7 @@ signature = hex(HMAC-SHA256(client_secret, message))
 | `suppressed` | 事件已记录，但被去重、孤立恢复或静默窗口抑制 |
 | `duplicate` | 同一客户端的 `event_id` 已存在，没有重复投递 |
 
-`suppressed` 还会返回 `reason=dedupe_window`、`reason=orphan_resolved` 或 `reason=silence`。
+`suppressed` 还会返回 `reason=dedupe_window`、`reason=orphan_resolved` 、`reason=stale_event` 或 `reason=silence`。
 
 ## 接入原则与迁移
 
@@ -196,3 +196,11 @@ signature = hex(HMAC-SHA256(client_secret, message))
 事件 `alert.created` 可按授权路由、来源、严重程度和状态过滤，只推送新 accepted/queued 告警的摘要与内部 ID。订阅使用平台提供的 HTTPS Webhook 和 Standard Webhooks 签名密钥，先验证 challenge，再持久化订阅；默认/最长 24 小时，支持续期、取消、五分钟双密钥轮换，无历史回放（`cursor:null`）。权限撤销或过期停止投递；410/413 不重试。回调 2xx 只表示接收。公开入站响应中的 `deliveries` 仍只计算配置的通知渠道，MCP 回调任务不会改变该数量；只读投递详情可见内部 `@mcp-event:` 任务及状态，但不含回调凭据。
 
 详细请求、响应、安全边界与真实账号验收见 [MCP Events](mcp.md#主动触发)。本功能已完成本地独立验证，并部署到隔离测试站 test.tedxiong.com；生产未升级，真实 Dots 订阅和唤醒未验收。
+
+### 生产告警降噪边界
+
+同一检查项使用稳定且独立的 `dedupe_key`（例如 `tmdb-connectivity`），不能仅用服务名合并不同故障。重复 firing 在配置的去重窗口内抑制；活跃故障的严重级别高于本次故障已排队通知的最高级别时立即排队，仍受已有静默和路由规则约束。晚于已保存生命周期事件到达、但 `occurred_at` 更早的事件保存为 `stale_event`，不改变故障状态或投递。相同时间戳按接收顺序处理，来源应提供准确且单调的检查时间。比较依据是仍在保留期内的事件，清理历史后不能声称拥有已删除的顺序或级别证据。
+
+网关不延迟 resolved，也不把时间流逝或没有新事件当作健康。监控端必须在连续成功检查后产生 resolved；现有转换事件不足以由网关证明连续成功。原始事件及其 event_id 按现有保留策略保存，重启继续去重，无历史回放。
+
+Bruce 聊天端负责固定 10 分钟内同一检查项反复 firing/resolved 的一次不稳定摘要，以及普通 status=info/test 仅记录。severity=info 的 firing/resolved 仍是生命周期事件。网关不再叠加摘要延迟，也不修改其他渠道既有 info/test 投递行为。现有订阅过滤保持原样：若订阅自身排除了 info 严重级别，聊天提示词无法补回被过滤事件，需单独核实实际订阅。

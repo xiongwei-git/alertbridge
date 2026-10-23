@@ -273,14 +273,34 @@ WHERE client_id=? AND routing_key=? AND dedupe_key=?`, p.ClientID, p.Event.Routi
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return AcceptResult{}, err
 		}
+		// Compare producer timestamps, never infer health from elapsed receipt time.
+		var latestMS sql.NullInt64
+		var previousSeverity int
+		err = tx.QueryRowContext(ctx, `SELECT MAX(occurred_at) FROM events
+WHERE client_id=? AND routing_key=? AND dedupe_key=? AND (status='firing' OR (status='resolved' AND incident_started_at IS NOT NULL))`,
+			p.ClientID, p.Event.RoutingKey, p.Event.DedupeKey).Scan(&latestMS)
+		if err != nil {
+			return AcceptResult{}, err
+		}
+		if exists && state == string(domain.StatusFiring) {
+			err = tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(CASE severity WHEN 'critical' THEN 3 WHEN 'warning' THEN 2 ELSE 1 END),0) FROM events
+WHERE client_id=? AND routing_key=? AND dedupe_key=? AND status='firing' AND outcome='queued' AND created_at>=?`,
+				p.ClientID, p.Event.RoutingKey, p.Event.DedupeKey, firstFiredMS).Scan(&previousSeverity)
+			if err != nil {
+				return AcceptResult{}, err
+			}
+		}
+		rank := map[domain.Severity]int{domain.SeverityInfo: 1, domain.SeverityWarning: 2, domain.SeverityCritical: 3}
 		nowMS := p.Now.UnixMilli()
-		if p.Event.Status == domain.StatusFiring {
+		if latestMS.Valid && p.Event.OccurredAt.UnixMilli() < latestMS.Int64 {
+			outcome, reason = OutcomeSuppressed, "stale_event"
+		} else if p.Event.Status == domain.StatusFiring {
 			switch {
 			case !exists || state == string(domain.StatusResolved):
 				_, err = tx.ExecContext(ctx, `INSERT INTO incidents(client_id,routing_key,dedupe_key,state,first_fired_at,last_seen_at,last_notified_at)
 VALUES(?,?,?,?,?,?,?) ON CONFLICT(client_id,routing_key,dedupe_key) DO UPDATE SET state=excluded.state,first_fired_at=excluded.first_fired_at,last_seen_at=excluded.last_seen_at,last_notified_at=excluded.last_notified_at`,
 					p.ClientID, p.Event.RoutingKey, p.Event.DedupeKey, domain.StatusFiring, nowMS, nowMS, nowMS)
-			case p.Now.Sub(time.UnixMilli(lastNotifiedMS)) < p.DedupeWindow:
+			case rank[p.Event.Severity] <= previousSeverity && p.Now.Sub(time.UnixMilli(lastNotifiedMS)) < p.DedupeWindow:
 				outcome, reason = OutcomeSuppressed, "dedupe_window"
 				_, err = tx.ExecContext(ctx, `UPDATE incidents SET last_seen_at=? WHERE client_id=? AND routing_key=? AND dedupe_key=?`, nowMS, p.ClientID, p.Event.RoutingKey, p.Event.DedupeKey)
 			default:

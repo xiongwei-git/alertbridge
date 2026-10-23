@@ -214,7 +214,7 @@ components:
         event_record_id: { type: string }
         event_id: { type: string }
         outcome: { type: string, enum: [queued, suppressed, duplicate] }
-        reason: { type: string, enum: [dedupe_window, orphan_resolved, silence] }
+        reason: { type: string, enum: [dedupe_window, orphan_resolved, stale_event, silence] }
         deliveries: { type: integer, minimum: 0 }
     Error:
       type: object
