@@ -1,6 +1,6 @@
 # ADR-018: Lifecycle noise and recovery evidence
 
-Accepted — 2026-10-23 (local implementation; production deployment pending).
+Accepted — 2026-10-23. Deployed to production in v0.6.3 at 03:32 UTC after offline and release verification.
 
 Incidents remain keyed by client, route and explicit dedupe_key. Sources must give each independent check its own stable key. Keep the first firing immediate, permit severity escalation above the active incident's highest queued firing severity through the dedupe window, and preserve existing route/silence decisions. Older producer timestamps are recorded but cannot change state or create deliveries. Equal timestamps retain receipt order. Existing retained events provide the evidence, so history pruning bounds these comparisons; no new schema or history replay is introduced.
 
